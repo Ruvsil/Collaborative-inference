@@ -35,26 +35,41 @@ if DATASET == 'cifar':
 
 CLSS = ds_train.classes
 
-def create_mixed_datasets(class_datasets, num_of_clients, rnd_ratio, datasets_len):
+def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
     ret = {}
     for i in range(num_of_clients):
-        cls = np.random.randint(0,len(CLSS))
-        base = Subset(class_datasets[cls], np.arange(int(rnd_ratio*datasets_len)))
+        main_clss = []
+        while len(main_clss)<num_main_classes:
+            cls = np.random.randint(0,len(CLSS))
+            if cls not in main_clss:
+                main_clss.append(cls)
+        base_ds = []
+        for c in main_clss:
+
+            base_ds.append(Subset(class_datasets[c], np.arange(int((rnd_ratio*datasets_len)/num_main_classes))))
+        #base2 = Subset(class_datasets[cls2], np.arange(int((rnd_ratio*datasets_len)/num_main_classes)))
+
+        base = base_ds[0]
+        for b in base_ds[1:]:
+            base += b
+        print('='*20,base)
+
         rnd = []
         for key, value in class_datasets.items():
-            if key is not cls:
+            if key not in main_clss:
                 rnd = ConcatDataset([rnd, value])
-        extra =  Subset(rnd, random.sample(range(len(rnd)), datasets_len-len(base)))
-        ret[cls] = (mixed_dataset(base,extra, datasets_len))
+        extra = Subset(rnd, random.sample(range(len(rnd)), int((1-rnd_ratio)*datasets_len)))
+        ret[i] = (mixed_dataset(base, extra, datasets_len, main_clss))
     return ret
 
 
 
 class mixed_dataset(Dataset):
-    def __init__(self, base, extra, full_length, transform=None):
+    def __init__(self, base, extra, full_length, main_clss=[], transform=None):
         self.base = base
         self.extra = extra
         self.full_length = full_length
+        self.main_clss = []
     def __getitem__(self, index):
         if  index< len(self.base):
             return self.base[index]
