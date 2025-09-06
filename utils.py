@@ -15,11 +15,7 @@ if DATASET == 'mnist':
 else:
     INPUT_DIM = 32*32*3
 
-HIDDEN_DIM = 3
-OUTPUT_DIM = 10
-N_LAYERS = 3
 
-NUM_CLIENTS = 10
 
 data_path = './datasets'
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
@@ -35,17 +31,23 @@ if DATASET == 'cifar':
 
 CLSS = ds_train.classes
 
+HIDDEN_DIM = 10
+OUTPUT_DIM = len(CLSS)
+N_LAYERS = 3
+
+NUM_CLIENTS = 10
+
+
 def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
     ret = {}
     for i in range(num_of_clients):
         main_clss = []
-        while len(main_clss)<num_main_classes:
-            cls = np.random.randint(0,len(CLSS))
+        while len(main_clss) < num_main_classes:
+            cls = np.random.randint(0, len(CLSS))
             if cls not in main_clss:
                 main_clss.append(cls)
         base_ds = []
         for c in main_clss:
-
             base_ds.append(Subset(class_datasets[c], np.arange(int((rnd_ratio*datasets_len)/num_main_classes))))
         #base2 = Subset(class_datasets[cls2], np.arange(int((rnd_ratio*datasets_len)/num_main_classes)))
 
@@ -65,13 +67,14 @@ def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_
 
 
 class mixed_dataset(Dataset):
-    def __init__(self, base, extra, full_length, main_clss=[], transform=None):
+    def __init__(self, base, extra, full_length, main_clss, transform=None):
         self.base = base
         self.extra = extra
         self.full_length = full_length
-        self.main_clss = []
+        self.main_clss = main_clss
+
     def __getitem__(self, index):
-        if  index< len(self.base):
+        if index < len(self.base):
             return self.base[index]
         else:
             return self.extra[len(self.base)-index]
@@ -93,6 +96,7 @@ class MyDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
+
 class client_network(nn.Module):
     def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim):
         super().__init__()
@@ -107,7 +111,13 @@ class client_network(nn.Module):
     def forward(self, input):
         return self.net(input)
 
-def one_hot_encode(index, num_classes):
-    tensor = torch.zeros(num_classes)
-    tensor[index] += 1
-    return tensor
+
+def one_hot_encode(batch, num_classes, main_clss):
+    ret = []
+    for y in batch:
+        tensor = torch.zeros(num_classes+1)
+        tensor[y] += 1
+        if y not in main_clss:
+            tensor[-1] += 1
+        ret.append(tensor)
+    return torch.stack(ret)
