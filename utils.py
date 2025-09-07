@@ -35,7 +35,7 @@ HIDDEN_DIM = 10
 OUTPUT_DIM = len(CLSS)
 N_LAYERS = 3
 
-NUM_CLIENTS = 10
+NUM_CLIENTS = 5
 
 
 def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
@@ -82,6 +82,7 @@ class mixed_dataset(Dataset):
     def __len__(self):
         return self.full_length
 
+
 class MyDataset(Dataset):
     def __init__(self, data, transform=None):
         self.data = data
@@ -110,6 +111,38 @@ class client_network(nn.Module):
 
     def forward(self, input):
         return self.net(input)
+
+
+class routing_network(nn.Module):
+    def __init__(self, n_layers, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU())
+        for lay in range(n_layers):
+            self.net.append(nn.Linear(hidden_dim, hidden_dim))
+            self.net.append(nn.ReLU())
+        self.net.append(nn.Linear(hidden_dim, output_dim))
+        # self.net.append(nn.Softmax())
+
+    def forward(self, input):
+        return self.net(input)
+
+
+def routing(net, clients, input, prediction):
+    softmax = nn.Softmax()
+    prediction = torch.argmax(prediction, dim=1)
+    mask = prediction == len(CLSS)
+    extracted = input[mask]
+    o = torch.argmax(net(extracted), dim=1)
+    routed = []
+    print(clients)
+    with torch.no_grad():
+        for idx, client_id in enumerate(o):
+            routed.append(clients[int(client_id)](extracted[idx]))
+        if routed:
+            routed = torch.stack(routed)
+    print(routed)
+
+
 
 
 def one_hot_encode(batch, num_classes, main_clss):
