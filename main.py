@@ -43,6 +43,7 @@ for key, (loader, main_clss) in mixed_data.items():
             x = torch.flatten(x, start_dim=1)
             o = clients[int(key)](x)
             routed, mask = routing(routing_net, clients, x, o)
+            print(routing_net.net[0].weight)
             print(torch.argmax(o, dim=1), y)
             los = loss(o,y)
             if len(routed):
