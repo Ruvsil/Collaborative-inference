@@ -128,19 +128,18 @@ class routing_network(nn.Module):
 
 
 def routing(net, clients, input, prediction):
-    softmax = nn.Softmax()
     prediction = torch.argmax(prediction, dim=1)
     mask = prediction == len(CLSS)
     extracted = input[mask]
     o = torch.argmax(net(extracted), dim=1)
     routed = []
-    print(clients)
+    print(o)
     with torch.no_grad():
         for idx, client_id in enumerate(o):
             routed.append(clients[int(client_id)](extracted[idx]))
         if routed:
             routed = torch.stack(routed)
-    print(routed)
+    return routed, mask
 
 
 
