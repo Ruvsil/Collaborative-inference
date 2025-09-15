@@ -31,17 +31,17 @@ if DATASET == 'cifar':
 
 CLSS = ds_train.classes
 
-HIDDEN_DIM = 10
+HIDDEN_DIM = 5
 OUTPUT_DIM = len(CLSS)
-N_LAYERS = 3
+N_LAYERS = 4
 
-NUM_CLIENTS = 5
+NUM_CLIENTS = 10
 
 
 def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
     ret = {}
     for i in range(num_of_clients):
-        main_clss = []
+        main_clss = [i]
         while len(main_clss) < num_main_classes:
             cls = np.random.randint(0, len(CLSS))
             if cls not in main_clss:
@@ -127,29 +127,51 @@ class routing_network(nn.Module):
         return self.net(input)
 
 
-def routing(net, clients, input, prediction):
+def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim):
     prediction = torch.argmax(prediction, dim=1)
     mask = prediction == len(CLSS)
-    extracted = input[mask]
-    o = torch.argmax(net(extracted), dim=1)
+    input_extracted = input[mask]
+    label_extracted = labels[mask]
+    y = []
+    for labl in label_extracted:
+        y.append(main_clss_dict[int(labl)][np.random.randint(len(main_clss_dict[int(labl)]))])
+
+    #print('aaa' , input_extracted, input_extracted.size())
+    o = net(input_extracted)
+
+    o_max = torch.argmax(o, dim=1)
     routed = []
-    print(o)
+
     with torch.no_grad():
-        for idx, client_id in enumerate(o):
-            routed.append(clients[int(client_id)](extracted[idx]))
+        for idx, client_id in enumerate(o_max):
+            routed.append(clients[int(client_id)](input_extracted[idx]))
         if routed:
             routed = torch.stack(routed)
+    if len(routed):
+        y = one_hot_encode(y, len(CLSS))
+        # y = torch.tensor(y, dtype=torch.float64)
+        print(y)
+        print(o_max)
+        #print(o)
+        l = loss(o, y)
+        print('ext_loss', l)
+        l.backward()
+        optim.step()
+        optim.zero_grad()
     return routed, mask
 
 
 
 
-def one_hot_encode(batch, num_classes, main_clss):
+def one_hot_encode(batch, num_classes, main_clss=None):
     ret = []
     for y in batch:
-        tensor = torch.zeros(num_classes+1)
+        if main_clss:
+            tensor = torch.zeros(num_classes+1)
+        else:
+            tensor = torch.zeros(num_classes)
         tensor[y] += 1
-        if y not in main_clss:
+        if main_clss and y not in main_clss:
             tensor[-1] += 1
         ret.append(tensor)
     return torch.stack(ret)
