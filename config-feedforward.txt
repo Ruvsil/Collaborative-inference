@@ -1,0 +1,51 @@
+[NEAT]
+fitness_criterion     = max
+fitness_threshold     = 50
+pop_size              = 50
+reset_on_extinction   = False
+
+[DefaultGenome]
+# The initial number of connections and nodes are based on your problem.
+# For a simple routing network, start with all inputs connected to all outputs.
+num_inputs = 784 # Corresponds to INPUT_DIM
+num_outputs = 10 # Corresponds to NUM_CLIENTS
+num_hidden = 0
+num_initial_solutions = 1
+
+# Mutation rates
+node_add_prob         = 0.05
+node_delete_prob      = 0.05
+conn_add_prob         = 0.5
+conn_delete_prob      = 0.5
+conn_weight_add_rate  = 0.1
+conn_weight_replace_rate = 0.1
+conn_weight_mutate_rate = 0.8
+conn_weight_mutate_power = 0.5
+
+# Mutation probabilities
+enabled_mutate_prob   = 0.01
+bias_mutate_rate      = 0.7
+bias_replace_rate     = 0.1
+bias_mutate_power     = 0.5
+response_mutate_rate  = 0.1
+response_replace_rate = 0.1
+
+# Crossover
+survival_threshold    = 0.2
+young_species_size    = 5
+old_species_size      = 20
+young_species_fitness_threshold = 1.2
+old_species_age_threshold = 5
+
+# Node/Connection properties
+activation_default    = relu
+activation_mutate_rate = 0.2
+activation_options    = relu sigmoid tanh
+aggregation_default   = sum
+aggregation_mutate_rate = 0.1
+aggregation_options   = sum product
+
+# Speciation
+compatibility_threshold = 3.0
+compatibility_disjoint_coefficient = 1.0
+compatibility_excess_coefficient = 1.0
