@@ -6,7 +6,7 @@ import pickle
 from torch import nn
 from torchvision.datasets import MNIST, CIFAR10
 from torchvision import transforms
-from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler
+from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler, DataLoader
 import torch
 
 DATASET = 'mnist'
@@ -27,6 +27,8 @@ if DATASET == 'mnist':
 if DATASET == 'cifar':
     ds_train = CIFAR10(data_path, train=True, download=True, transform=transform)
     ds_test = CIFAR10(data_path, train=False, download=True, transform=transform)
+
+test_loader = DataLoader(ds_test, batch_size=128, shuffle=False)
 
 CLSS = ds_train.classes
 

@@ -5,7 +5,7 @@ from collections import defaultdict
 from utils import *
 import neat
 import os
-import visualize
+#import visualize
 
 # NEAT configuration file
 local_dir = os.path.dirname(__file__)
@@ -23,20 +23,23 @@ def eval_genomes(genomes, config):
         # We'll evaluate the network on the test set to measure its fitness
         with torch.no_grad():
             for x, y in test_loader:
+                print(x)
                 x = x.view(x.size(0), -1).float()
 
                 # Use the evolved NEAT network for routing on samples not confidently classified
                 main_clients_predictions = []
-                for client in clients.values():
-                    main_clients_predictions.append(client(x))
+                main_clients_predictions = clients[0](x)
 
-                main_clients_predictions = torch.stack(main_clients_predictions)
-                main_clients_predictions = main_clients_predictions.permute(1, 0, 2)
-
+                #main_clients_predictions = torch.stack(main_clients_predictions)
+                #print(main_clients_predictions.size())
+                #main_clients_predictions = main_clients_predictions.permute(1, 0, 2)
+                print(main_clients_predictions)
                 # Check for unclassified samples (those with a prediction == len(CLSS))
-                predictions = torch.argmax(main_clients_predictions, dim=2)
-                mask = (predictions == len(CLSS)).all(dim=1)
+                predictions = torch.argmax(main_clients_predictions, dim=1)
+                print(predictions)
 
+                mask = predictions == len(CLSS)
+                print(mask)
                 if mask.sum() > 0:
                     x_extracted = x[mask]
                     y_extracted = y[mask]
@@ -107,11 +110,12 @@ for key, (loader, main_clss) in mixed_data.items():
             optim.zero_grad()
             output = clients[int(key)](x_reshaped)
             l = loss(output, y)
+            print(l)
             l.backward()
             optim.step()
 
 # Run for up to 300 generations
-winner = p.run(eval_genomes, 300)
+winner = p.run(eval_genomes, 100)
 
 print('\nBest genome:\n{!s}'.format(winner))
 
@@ -120,9 +124,9 @@ winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
 
 # Visualize the network and stats
 node_names = {i: str(i) for i in range(NUM_CLIENTS)}
-visualize.draw_net(config, winner, True, node_names=node_names)
-visualize.plot_stats(stats, ylog=False, view=True)
-visualize.plot_species(stats, view=True)
+# visualize.draw_net(config, winner, True, node_names=node_names)
+# visualize.plot_stats(stats, ylog=False, view=True)
+# visualize.plot_species(stats, view=True)
 
 # Save the winner
 with open('winner.pkl', 'wb') as f:
