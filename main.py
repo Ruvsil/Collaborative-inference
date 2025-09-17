@@ -45,7 +45,8 @@ def eval_genomes(genomes, config):
                     y_extracted = y[mask]
 
                     # Feed the extracted data to the NEAT network
-                    o = net.activate(x_extracted.cpu().detach().numpy().flatten())
+                    o = net.activate(x_extracted)
+                    print(o)
                     o = np.array(o).reshape(len(x_extracted), NUM_CLIENTS)
                     o_max = np.argmax(o, axis=1)
 
@@ -106,13 +107,18 @@ for key, (loader, main_clss) in mixed_data.items():
     optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.2)
     for epoch in range(5):
         for x, y in loader:
-            x_reshaped = x.view(x.size(0), -1).float()
-            optim.zero_grad()
-            output = clients[int(key)](x_reshaped)
-            l = loss(output, y)
-            print(l)
-            l.backward()
+            y_1hot = one_hot_encode(y, len(CLSS), main_clss)
+            x = torch.flatten(x, start_dim=1)
+            o = clients[int(key)](x)
+            #routed, mask = routing(routing_net, clients, x, o, y, main_clss_dict, routing_loss, routing_optim)
+            print(torch.argmax(o, dim=1), y_1hot)
+            los = loss(o, y_1hot)
+            # if len(routed):
+            #     los += loss(routed, y_1hot[mask])
+            los.backward()
             optim.step()
+            optim.zero_grad()
+            print(los)
 
 # Run for up to 300 generations
 winner = p.run(eval_genomes, 100)
