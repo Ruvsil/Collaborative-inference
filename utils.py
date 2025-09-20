@@ -52,12 +52,9 @@ def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_
         for c in main_clss:
             base_ds.append(Subset(class_datasets[c], np.arange(int((rnd_ratio*datasets_len)/num_main_classes))))
         #base2 = Subset(class_datasets[cls2], np.arange(int((rnd_ratio*datasets_len)/num_main_classes)))
-
         base = base_ds[0]
         for b in base_ds[1:]:
             base += b
-        print('='*20,base)
-
         rnd = []
         for key, value in class_datasets.items():
             if key not in main_clss:
