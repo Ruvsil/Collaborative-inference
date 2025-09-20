@@ -29,13 +29,13 @@ if DATASET == 'cifar':
     ds_train = CIFAR10(data_path, train=True, download=True, transform=transform)
     ds_test = CIFAR10(data_path, train = False, download=True, transform=transform)
 
-test_loader = DataLoader(ds_test, batch_size=128, shuffle=False)
-
+test_loader = DataLoader(ds_test, shuffle=False)
+print(len(test_loader))
 CLSS = ds_train.classes
 
-HIDDEN_DIM = 5
+HIDDEN_DIM = 10
 OUTPUT_DIM = len(CLSS)
-N_LAYERS = 4
+N_LAYERS = 3
 
 NUM_CLIENTS = 10
 
@@ -172,5 +172,6 @@ def one_hot_encode(batch, num_classes, main_clss=None):
         tensor[y] += 1
         if main_clss and y not in main_clss:
             tensor[-1] += 1
+            tensor[y] -= 1
         ret.append(tensor)
     return torch.stack(ret)

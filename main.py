@@ -4,6 +4,7 @@ from torch.utils.data import Subset, DataLoader
 from collections import defaultdict
 from utils import *
 import neat
+import pickle
 import os
 #import visualize
 
@@ -22,8 +23,10 @@ def eval_genomes(genomes, config):
 
         # We'll evaluate the network on the test set to measure its fitness
         with torch.no_grad():
-            for x, y in test_loader:
-                print(x)
+            for t, (x, y) in enumerate(test_loader):
+                if t==200:
+                    break
+                #print(x)
                 x = x.view(x.size(0), -1).float()
 
                 # Use the evolved NEAT network for routing on samples not confidently classified
@@ -33,23 +36,23 @@ def eval_genomes(genomes, config):
                 #main_clients_predictions = torch.stack(main_clients_predictions)
                 #print(main_clients_predictions.size())
                 #main_clients_predictions = main_clients_predictions.permute(1, 0, 2)
-                print(main_clients_predictions)
+                #print(main_clients_predictions)
                 # Check for unclassified samples (those with a prediction == len(CLSS))
                 predictions = torch.argmax(main_clients_predictions, dim=1)
-                print(predictions)
+                #print(predictions)
 
                 mask = predictions == len(CLSS)
-                print(mask)
+                #print(mask)
                 if mask.sum() > 0:
                     x_extracted = x[mask]
                     y_extracted = y[mask]
 
                     # Feed the extracted data to the NEAT network
-                    print(x_extracted)
-                    print(len(x_extracted))
-                    print(x_extracted.size())
-                    o = net.activate(x_extracted)
-                    print(o)
+                    # print(x_extracted)
+                    # print(len(x_extracted))
+                    # print(x_extracted.size())
+                    o = net.activate(x_extracted[0])
+                    # print(o)
                     o = np.array(o).reshape(len(x_extracted), NUM_CLIENTS)
                     o_max = np.argmax(o, axis=1)
 
@@ -98,7 +101,7 @@ for class_label, indices in class_indices.items():
 
 main_clss_dict = defaultdict(list)
 
-mixed_data = create_mixed_datasets(clss_data, num_of_clients=NUM_CLIENTS, num_main_classes=2, rnd_ratio=0.7,
+mixed_data = create_mixed_datasets(clss_data, num_of_clients=NUM_CLIENTS, num_main_classes=2, rnd_ratio=0.5,
                                    datasets_len=10000)
 
 for id, dat in mixed_data.items():
@@ -107,8 +110,9 @@ for id, dat in mixed_data.items():
     mixed_data[id] = (DataLoader(dat, batch_size=128, shuffle=True), dat.main_clss)
 
 for key, (loader, main_clss) in mixed_data.items():
-    optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.3)
-    for epoch in range(3):
+    optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.2)
+    for epoch in range(10):
+        print(key, epoch)
         for x, y in loader:
             y_1hot = one_hot_encode(y, len(CLSS), main_clss)
             x = torch.flatten(x, start_dim=1)
@@ -121,14 +125,15 @@ for key, (loader, main_clss) in mixed_data.items():
             los.backward()
             optim.step()
             optim.zero_grad()
-            #print(los)
+            print(los)
 
-# Run for up to 300 generations
-winner = p.run(eval_genomes, 100)
+    torch.save(clients[int(key)], f'client_{int(key)}')
+
+
+winner = p.run(eval_genomes, 15)
 
 print('\nBest genome:\n{!s}'.format(winner))
 
-# You can then use the best genome to create a network for the final routing logic
 winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
 
 # Visualize the network and stats

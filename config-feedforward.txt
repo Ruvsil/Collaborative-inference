@@ -1,7 +1,7 @@
 [NEAT]
 fitness_criterion     = max
 fitness_threshold     = 3.9
-pop_size              = 100
+pop_size              = 20
 reset_on_extinction   = True
 
 [DefaultGenome]
@@ -40,7 +40,7 @@ feed_forward            = True
 initial_connection      = full
 
 # node add/remove rates
-node_add_prob           = 0.2
+node_add_prob           = 0.1
 node_delete_prob        = 0.2
 
 # network parameters
@@ -59,11 +59,11 @@ response_replace_rate   = 0.0
 
 # connection weight options
 weight_init_mean        = 0.0
-weight_init_stdev       = 1.0
+weight_init_stdev       = 1
 weight_max_value        = 30
 weight_min_value        = -30
-weight_mutate_power     = 0.5
-weight_mutate_rate      = 0.8
+weight_mutate_power     = 0.8
+weight_mutate_rate      = 0.2
 weight_replace_rate     = 0.1
 
 [DefaultSpeciesSet]
