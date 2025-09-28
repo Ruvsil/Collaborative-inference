@@ -33,7 +33,7 @@ test_loader = DataLoader(ds_test, shuffle=False)
 print(len(test_loader))
 CLSS = ds_train.classes
 
-HIDDEN_DIM = 10
+HIDDEN_DIM = 5
 OUTPUT_DIM = len(CLSS)
 N_LAYERS = 3
 

@@ -24,47 +24,48 @@ def eval_genomes(genomes, config):
         # We'll evaluate the network on the test set to measure its fitness
         with torch.no_grad():
             for t, (x, y) in enumerate(test_loader):
-                if t==200:
+                if t == 300:
                     break
-                #print(x)
+                #print(x.shape)
                 x = x.view(x.size(0), -1).float()
-
+                #print(x.shape)
                 # Use the evolved NEAT network for routing on samples not confidently classified
-                main_clients_predictions = []
-                main_clients_predictions = clients[0](x)
+                #main_clients_predictions = []
+                #main_clients_predictions = clients[0](x)
 
                 #main_clients_predictions = torch.stack(main_clients_predictions)
                 #print(main_clients_predictions.size())
                 #main_clients_predictions = main_clients_predictions.permute(1, 0, 2)
                 #print(main_clients_predictions)
                 # Check for unclassified samples (those with a prediction == len(CLSS))
-                predictions = torch.argmax(main_clients_predictions, dim=1)
+                #predictions = torch.argmax(main_clients_predictions, dim=1)
                 #print(predictions)
 
-                mask = predictions == len(CLSS)
+                #mask = predictions == len(CLSS)
                 #print(mask)
-                if mask.sum() > 0:
-                    x_extracted = x[mask]
-                    y_extracted = y[mask]
+                #if mask.sum() > 0:
+                #    x_extracted = x[mask]
+                #    y_extracted = y[mask]
 
                     # Feed the extracted data to the NEAT network
                     # print(x_extracted)
                     # print(len(x_extracted))
                     # print(x_extracted.size())
-                    o = net.activate(x_extracted[0])
-                    # print(o)
-                    o = np.array(o).reshape(len(x_extracted), NUM_CLIENTS)
-                    o_max = np.argmax(o, axis=1)
+                o = net.activate(x[0])
+                #print(o)
+                o_max = np.argmax(o)
 
-                    routed_correct = 0
-                    for idx, client_id in enumerate(o_max):
-                        routed_output = clients[int(client_id)](x_extracted[idx])
-                        routed_prediction = torch.argmax(routed_output)
-                        if routed_prediction == y_extracted[idx]:
-                            routed_correct += 1
+                routed_correct = 0
 
-                    total_correct += routed_correct
-                    total_samples += len(x_extracted)
+                if o_max in main_clss_dict[int(y[0])]:
+                    routed_correct += 1
+                    # routed_output = clients[int(client_id)](x[idx])
+                    # routed_prediction = torch.argmax(routed_output)
+                    # if routed_prediction == y[idx]:
+                    #     routed_correct += 1
+
+                total_correct += routed_correct
+                total_samples += 1
 
         # Fitness is a measure of routing accuracy
         genome.fitness = total_correct / total_samples if total_samples > 0 else 0
