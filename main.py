@@ -20,7 +20,7 @@ def eval_genomes(genomes, config):
 
         total_correct = 0
         total_samples = 0
-
+        conf_mat = np.zeros((NUM_CLIENTS, len(CLSS)))
         # We'll evaluate the network on the test set to measure its fitness
         with torch.no_grad():
             for t, (x, y) in enumerate(test_loader):
@@ -56,7 +56,7 @@ def eval_genomes(genomes, config):
                 o_max = np.argmax(o)
 
                 routed_correct = 0
-
+                conf_mat[o_max][int(y[0])] += 1
                 if o_max in main_clss_dict[int(y[0])]:
                     routed_correct += 1
                     # routed_output = clients[int(client_id)](x[idx])
@@ -69,7 +69,9 @@ def eval_genomes(genomes, config):
 
         # Fitness is a measure of routing accuracy
         genome.fitness = total_correct / total_samples if total_samples > 0 else 0
-
+        print('==========================')
+        print(conf_mat)
+        print('==========================')
 
 clients = {}
 
@@ -146,3 +148,5 @@ node_names = {i: str(i) for i in range(NUM_CLIENTS)}
 # Save the winner
 with open('winner.pkl', 'wb') as f:
     pickle.dump(winner, f)
+
+eval_genomes([winner], config)

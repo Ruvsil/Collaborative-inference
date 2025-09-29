@@ -29,7 +29,7 @@ if DATASET == 'cifar':
     ds_train = CIFAR10(data_path, train=True, download=True, transform=transform)
     ds_test = CIFAR10(data_path, train = False, download=True, transform=transform)
 
-test_loader = DataLoader(ds_test, shuffle=False)
+test_loader = DataLoader(ds_test, shuffle=True)
 print(len(test_loader))
 CLSS = ds_train.classes
 
