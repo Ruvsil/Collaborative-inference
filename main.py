@@ -15,6 +15,7 @@ config_path = os.path.join(local_dir, 'config-feedforward.txt')
 
 # The main function to run NEAT
 def eval_genomes(genomes, config):
+    print(genomes)
     for genome_id, genome in genomes:
         net = neat.nn.FeedForwardNetwork.create(genome, config)
 
@@ -24,7 +25,7 @@ def eval_genomes(genomes, config):
         # We'll evaluate the network on the test set to measure its fitness
         with torch.no_grad():
             for t, (x, y) in enumerate(test_loader):
-                if t == 300:
+                if t == 200:
                     break
                 #print(x.shape)
                 x = x.view(x.size(0), -1).float()
@@ -57,13 +58,14 @@ def eval_genomes(genomes, config):
 
                 routed_correct = 0
                 conf_mat[o_max][int(y[0])] += 1
-                if o_max in main_clss_dict[int(y[0])]:
+                if int(y[0]) in main_clss_dict[o_max]:
                     routed_correct += 1
                     # routed_output = clients[int(client_id)](x[idx])
                     # routed_prediction = torch.argmax(routed_output)
                     # if routed_prediction == y[idx]:
                     #     routed_correct += 1
-
+                else:
+                    routed_correct -= 1
                 total_correct += routed_correct
                 total_samples += 1
 
@@ -84,8 +86,8 @@ loss = torch.nn.CrossEntropyLoss()
 config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
                      config_path)
-
-# Create the population, which is the top-level object for the NEAT algorithm
+#
+# # Create the population, which is the top-level object for the NEAT algorithm
 p = neat.Population(config)
 
 # Add a stdout reporter to show progress in the terminal
@@ -104,12 +106,12 @@ for class_label, indices in class_indices.items():
 
 main_clss_dict = defaultdict(list)
 
-mixed_data = create_mixed_datasets(clss_data, num_of_clients=NUM_CLIENTS, num_main_classes=2, rnd_ratio=0.5,
-                                   datasets_len=10000)
+mixed_data = create_mixed_datasets(clss_data, num_of_clients=NUM_CLIENTS, num_main_classes=3, rnd_ratio=0.8,
+                                   datasets_len=5000)
 
 for id, dat in mixed_data.items():
     for cls in dat.main_clss:
-        main_clss_dict[cls].append(id)
+        main_clss_dict[id].append(cls)
     mixed_data[id] = (DataLoader(dat, batch_size=128, shuffle=True), dat.main_clss)
 
 for key, (loader, main_clss) in mixed_data.items():
@@ -133,7 +135,7 @@ for key, (loader, main_clss) in mixed_data.items():
     torch.save(clients[int(key)], f'client_{int(key)}')
 
 
-winner = p.run(eval_genomes, 15)
+winner = p.run(eval_genomes, 6)
 
 print('\nBest genome:\n{!s}'.format(winner))
 
@@ -149,4 +151,5 @@ node_names = {i: str(i) for i in range(NUM_CLIENTS)}
 with open('winner.pkl', 'wb') as f:
     pickle.dump(winner, f)
 
-eval_genomes([winner], config)
+eval_genomes([(1,winner)], config)
+print(main_clss_dict)

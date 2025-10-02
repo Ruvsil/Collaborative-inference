@@ -60,7 +60,8 @@ def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_
             if key not in main_clss:
                 rnd = ConcatDataset([rnd, value])
         extra = Subset(rnd, random.sample(range(len(rnd)), int((1-rnd_ratio)*datasets_len)))
-        ret[i] = (mixed_dataset(base, extra, datasets_len, main_clss))
+        print(len(base), len(extra), datasets_len, main_clss)
+        ret[i] = (mixed_dataset(base, extra, len(base)+len(extra), main_clss))
     return ret
 
 
