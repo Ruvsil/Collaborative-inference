@@ -33,12 +33,12 @@ test_loader = DataLoader(ds_test, shuffle=True)
 print(len(test_loader))
 CLSS = ds_train.classes
 
-HIDDEN_DIM = 5
+HIDDEN_DIM = 10
 OUTPUT_DIM = len(CLSS)
 N_LAYERS = 3
 
 NUM_CLIENTS = 10
-
+client_train = False
 
 def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
     ret = {}
@@ -113,52 +113,50 @@ class client_network(nn.Module):
         return self.net(input)
 
 
-# class routing_network(nn.Module):
-#     def __init__(self, n_layers, input_dim, hidden_dim, output_dim):
-#         super().__init__()
-#         self.net = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU())
-#         for lay in range(n_layers):
-#             self.net.append(nn.Linear(hidden_dim, hidden_dim))
-#             self.net.append(nn.ReLU())
-#         self.net.append(nn.Linear(hidden_dim, output_dim))
-#         # self.net.append(nn.Softmax())
-#
-#     def forward(self, input):
-#         return self.net(input)
+class routing_network(nn.Module):
+    def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.client_id = client_id
+        self.net = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU())
+        for lay in range(n_layers):
+            self.net.append(nn.Linear(hidden_dim, hidden_dim))
+            self.net.append(nn.ReLU())
+        self.net.append(nn.Linear(hidden_dim, output_dim))
+        # self.net.append(nn.Softmax())
+
+    def forward(self, input):
+        return self.net(input)
 
 
-# def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim):
-#     prediction = torch.argmax(prediction, dim=1)
-#     mask = prediction == len(CLSS)
-#     input_extracted = input[mask]
-#     label_extracted = labels[mask]
-#     y = []
-#     for labl in label_extracted:
-#         y.append(main_clss_dict[int(labl)][np.random.randint(len(main_clss_dict[int(labl)]))])
-#
-#     #print('aaa' , input_extracted, input_extracted.size())
-#     o = net(input_extracted)
-#
-#     o_max = torch.argmax(o, dim=1)
-#     routed = []
-#
-#     with torch.no_grad():
-#         for idx, client_id in enumerate(o_max):
-#             routed.append(clients[int(client_id)](input_extracted[idx]))
-#         if routed:
-#             routed = torch.stack(routed)
-#     if len(routed):
-#         y = one_hot_encode(y, len(CLSS))
-#         # y = torch.tensor(y, dtype=torch.float64)
-#         print(y)
-#         print(o_max)
-#         #print(o)
-#         l = loss(o, y)
-#         print('ext_loss', l)
-#         l.backward()
-#         optim.step()
-#         optim.zero_grad()
-#     return routed, mask
+def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim):
+    prediction = torch.argmax(prediction, dim=1)
+    mask = prediction == len(CLSS)
+    input_extracted = input[mask]
+    label_extracted = labels[mask]
+    y = []
+    for labl in label_extracted:
+        y.append(main_clss_dict[int(labl)][0])
+    #print('aaa' , input_extracted, input_extracted.size())
+    o = net(input_extracted)
+    o_max = torch.argmax(o, dim=1)
+    routed = []
+    with torch.no_grad():
+        for idx, client_id in enumerate(o_max):
+            routed.append(clients[int(client_id)](input_extracted[idx]))
+        if routed:
+            routed = torch.stack(routed)
+    if len(routed):
+        y = one_hot_encode(y, NUM_CLIENTS)
+        # y = torch.tensor(y, dtype=torch.float64)
+        print(torch.argmax(y, dim=1))
+        print(o_max)
+        #print(o)
+        l = loss(o, y)
+        print('ext_loss', l)
+        l.backward()
+        optim.step()
+        optim.zero_grad()
+    return routed, mask
 
 
 
