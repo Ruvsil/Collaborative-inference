@@ -78,7 +78,7 @@ def eval_genomes(genomes, config):
 clients = {}
 routing_nets = {}
 for i in range(NUM_CLIENTS):
-    clients[i] = (client_network(i, N_LAYERS, INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM + 1))
+    clients[i] = (client_network(i, N_LAYERS, INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM))
     routing_nets[i] = (routing_network(i, 10, INPUT_DIM, 25 , NUM_CLIENTS))
 
 loss = torch.nn.CrossEntropyLoss()
@@ -117,10 +117,10 @@ for id, dat in mixed_data.items():
 if client_train:
     for key, (loader, main_clss) in mixed_data.items():
         optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.1)
-        for epoch in range(15):
+        for epoch in range(50):
             print(key, epoch)
-            for x, y in test_loader:
-                y_1hot = one_hot_encode(y, len(CLSS), main_clss)
+            for x, y in loader:
+                y_1hot = one_hot_encode(y, len(CLSS))
                 x = torch.flatten(x, start_dim=1)
                 o = clients[int(key)](x)
                 #print(torch.argmax(o, dim=1), y_1hot)
@@ -132,45 +132,46 @@ if client_train:
                 optim.zero_grad()
                 print(los)
 
-        torch.save(clients[int(key)], f'client_{int(key)}')
+        torch.save(clients[int(key)], f'client_base_{int(key)}')
 else:
     for key, (loader, main_clss) in mixed_data.items():
         clients[int(key)] = torch.load(f'./client_{int(key)}')
 
-for key, (loader, main_clss) in mixed_data.items():
-    routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0001)
-    for epoch in range(200):
-        print(key, epoch)
-        for x, y in loader:
-            y_1hot = one_hot_encode(y, len(CLSS), main_clss)
-            x = torch.flatten(x, start_dim=1)
-            o = clients[int(key)](x)
-            routed, mask = routing(routing_nets[int(key)], clients, x, o, y, main_clss_dict, routing_loss, routing_optim)
-            #print(torch.argmax(o, dim=1), y_1hot)
-            # los = loss(o, y_1hot)
-            # # if len(routed):
-            # #     los += loss(routed, y_1hot[mask])
-            # los.backward()
-            # optim.step()
-            # optim.zero_grad()
-            # print(los)
-
-
-# winner = p.run(eval_genomes, 6)
+# for key, (loader, main_clss) in mixed_data.items():
+#     routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0001)
+#     for epoch in range(200):
+#         print(key, epoch)
+#         for x, y in loader:
+#             y_1hot = one_hot_encode(y, len(CLSS), main_clss)
+#             x = torch.flatten(x, start_dim=1)
+#             o = clients[int(key)](x)
+#             routed, mask = routing(routing_nets[int(key)], clients, x, o, y, main_clss_dict, routing_loss, routing_optim)
+#             #print(torch.argmax(o, dim=1), y_1hot)
+#             # los = loss(o, y_1hot)
+#             # # if len(routed):
+#             # #     los += loss(routed, y_1hot[mask])
+#             # los.backward()
+#             # optim.step()
+#             # optim.zero_grad()
+#             # print(los)
 #
-# print('\nBest genome:\n{!s}'.format(winner))
+#     torch.save(routing_nets[int(key)], f'routing_{int(key)}')
 #
-# winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
-#
-# # Visualize the network and stats
-# node_names = {i: str(i) for i in range(NUM_CLIENTS)}
-# # visualize.draw_net(config, winner, True, node_names=node_names)
-# # visualize.plot_stats(stats, ylog=False, view=True)
-# # visualize.plot_species(stats, view=True)
-#
-# # Save the winner
-# with open('winner.pkl', 'wb') as f:
-#     pickle.dump(winner, f)
-#
-# eval_genomes([(1,winner)], config)
-# print(main_clss_dict)
+# # winner = p.run(eval_genomes, 6)
+# #
+# # print('\nBest genome:\n{!s}'.format(winner))
+# #
+# # winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
+# #
+# # # Visualize the network and stats
+# # node_names = {i: str(i) for i in range(NUM_CLIENTS)}
+# # # visualize.draw_net(config, winner, True, node_names=node_names)
+# # # visualize.plot_stats(stats, ylog=False, view=True)
+# # # visualize.plot_species(stats, view=True)
+# #
+# # # Save the winner
+# # with open('winner.pkl', 'wb') as f:
+# #     pickle.dump(winner, f)
+# #
+# # eval_genomes([(1,winner)], config)
+# # print(main_clss_dict)

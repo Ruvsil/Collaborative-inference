@@ -38,7 +38,7 @@ OUTPUT_DIM = len(CLSS)
 N_LAYERS = 3
 
 NUM_CLIENTS = 10
-client_train = False
+client_train = True
 
 def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
     ret = {}
