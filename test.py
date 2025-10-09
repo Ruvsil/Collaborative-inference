@@ -6,7 +6,7 @@ from utils import *
 import pickle
 import os
 
-
+base = True
 clients = {}
 routing_nets = {}
 for i in range(NUM_CLIENTS):
@@ -26,19 +26,51 @@ for class_label, indices in class_indices.items():
     clss_data[class_label] = MyDataset(Subset(ds_train, indices))
 
 for key in range(NUM_CLIENTS):
-    clients[int(key)] = torch.load(f'./client_base_{int(key)}')
-    routing_nets[int(key)] = torch.load(f'./routing_{int(key)}')
+    clients[int(key)] = torch.load(f'./client_base_{int(key)}', weights_only = False)
+    routing_nets[int(key)] = torch.load(f'./routing_{int(key)}', weights_only = False)
 
+losses = []
+if base:
+    with torch.no_grad():
+        for key, client in clients.items():
+            client_loss = []
+            for x, y in test_loader:
+                y_1hot = one_hot_encode(y, len(CLSS))
+                x = torch.flatten(x, start_dim=1)
+                o = clients[int(key)](x)
+                #print(torch.argmax(o, dim=1), y_1hot)
+                los = loss(o, y_1hot)
+                client_loss.append(los)
+            print(key, sum(client_loss)/len(client_loss))
+            losses.append(sum(client_loss)/len(client_loss))
+else:
+    with torch.no_grad():
+        for key, client in clients.items():
+            client_loss = []
+            for x, y in test_loader:
+                y_1hot = one_hot_encode(y, len(CLSS))
+                x = torch.flatten(x, start_dim=1)
+                o = clients[int(key)](x)
+                o_max = torch.argmax(o, dim=1)
+                mask = o_max == len(CLSS)
+                extracted = x[mask]
+                prediction=[]
+                routed = torch.argmax(routing_nets[key](extracted), dim=1)
+                if len(routed):
+                    for i,(sample, cli) in enumerate(zip(extracted, routed)):
+                        prediction.append(clients[int(cli)](sample))
+                routed = None
+                # print(torch.argmax(o, dim=1), y_1hot)
+                prediction = torch.stack(prediction)
+                o[mask] = prediction
+                los = loss(o[:,:-1], y_1hot)
 
-
-losssssss = []
-with torch.no_grad():
-    for x, y in test_loader:
-        y_1hot = one_hot_encode(y, len(CLSS))
-        x = torch.flatten(x, start_dim=1)
-        o = clients[int(key)](x)
-        #print(torch.argmax(o, dim=1), y_1hot)
-        los = loss(o, y_1hot)
-        losssssss.append(los)
-
-print(sum(losssssss)/len(losssssss))
+                # print(torch.argmax(o[:,:-1],dim=1).float())
+                # print(torch.argmax(y_1hot,dim=1).float())
+                # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
+                print(los)
+                client_loss.append(los)
+            print(key, sum(client_loss) / len(client_loss))
+            losses.append(sum(client_loss) / len(client_loss))
+print(losses)
+print(sum(losses)/len(losses))
