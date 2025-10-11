@@ -29,7 +29,7 @@ if DATASET == 'cifar':
     ds_train = CIFAR10(data_path, train=True, download=True, transform=transform)
     ds_test = CIFAR10(data_path, train = False, download=True, transform=transform)
 
-test_loader = DataLoader(ds_test, batch_size = 128,shuffle=True)
+test_loader = DataLoader(ds_test, batch_size = 10,shuffle=True)
 CLSS = ds_train.classes
 
 HIDDEN_DIM = 10
@@ -139,17 +139,17 @@ def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim
     o = net(input_extracted)
     o_max = torch.argmax(o, dim=1)
     routed = []
-    with torch.no_grad():
-        for idx, client_id in enumerate(o_max):
-            routed.append(clients[int(client_id)](input_extracted[idx]))
-        if routed:
-            routed = torch.stack(routed)
+
+    for idx, client_id in enumerate(o_max):
+        routed.append(clients[int(client_id)](input_extracted[idx]))
+    if routed:
+        routed = torch.stack(routed)
     if len(routed):
         y = one_hot_encode(y, NUM_CLIENTS)
         # y = torch.tensor(y, dtype=torch.float64)
         print(torch.argmax(y, dim=1))
         print(o_max)
-        #print(o)
+        print('babababaababab',o.size(), y.size())
         l = loss(o, y)
         print('ext_loss', l)
         l.backward()
@@ -158,7 +158,34 @@ def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim
     return routed, mask
 
 
+def test_los(client, routing_net, loss, key):
+    with torch.no_grad():
+        client_loss = []
+        for x, y in test_loader:
+            y_1hot = one_hot_encode(y, len(CLSS))
+            x = torch.flatten(x, start_dim=1)
+            o = client(x)
 
+            o_max = torch.argmax(o, dim=1)
+            mask = o_max == len(CLSS)
+            extracted = x[mask]
+            prediction = []
+            routed = torch.argmax(routing_net(extracted), dim=1)
+            if len(routed):
+                for i, (sample, cli) in enumerate(zip(extracted, routed)):
+                    prediction.append(client(sample))
+                prediction = torch.stack(prediction)
+                routed = None
+                # print(torch.argmax(o, dim=1), y_1hot)
+                o[mask] = prediction
+
+            los = loss(o[:, :-1], y_1hot)
+
+            # print(torch.argmax(o[:,:-1],dim=1).float())
+            # print(torch.argmax(y_1hot,dim=1).float())
+            # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
+            client_loss.append(los)
+        print(key, sum(client_loss)/len(client_loss))
 
 def one_hot_encode(batch, num_classes, main_clss=None):
     ret = []
@@ -170,6 +197,6 @@ def one_hot_encode(batch, num_classes, main_clss=None):
         tensor[y] += 1
         if main_clss and y not in main_clss:
             tensor[-1] += 1
-            tensor[y] -= 1
+            #tensor[y] -= 1
         ret.append(tensor)
     return torch.stack(ret)

@@ -78,7 +78,7 @@ def eval_genomes(genomes, config):
 clients = {}
 routing_nets = {}
 for i in range(NUM_CLIENTS):
-    clients[i] = (client_network(i, N_LAYERS, INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM))
+    clients[i] = (client_network(i, N_LAYERS, INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM+1))
     routing_nets[i] = (routing_network(i, 10, INPUT_DIM, 25 , NUM_CLIENTS))
 
 loss = torch.nn.CrossEntropyLoss()
@@ -107,7 +107,7 @@ for class_label, indices in class_indices.items():
 
 main_clss_dict = defaultdict(list)
 
-mixed_data = create_mixed_datasets(clss_data, num_of_clients=NUM_CLIENTS, num_main_classes=3, rnd_ratio=0.5,
+mixed_data = create_mixed_datasets(clss_data, num_of_clients=NUM_CLIENTS, num_main_classes=3, rnd_ratio=0.7,
                                    datasets_len=10000)
 
 for id, dat in mixed_data.items():
@@ -117,10 +117,10 @@ for id, dat in mixed_data.items():
 if client_train:
     for key, (loader, main_clss) in mixed_data.items():
         optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.1)
-        for epoch in range(50):
+        for epoch in range(20):
             print(key, epoch)
             for x, y in loader:
-                y_1hot = one_hot_encode(y, len(CLSS))
+                y_1hot = one_hot_encode(y, len(CLSS), main_clss)
                 x = torch.flatten(x, start_dim=1)
                 o = clients[int(key)](x)
                 #print(torch.argmax(o, dim=1), y_1hot)
@@ -130,32 +130,31 @@ if client_train:
                 los.backward()
                 optim.step()
                 optim.zero_grad()
-                print(los)
+                #print(los)
 
-        torch.save(clients[int(key)], f'client_base_{int(key)}')
+        torch.save(clients[int(key)], f'client_{int(key)}')
 else:
     for key, (loader, main_clss) in mixed_data.items():
         clients[int(key)] = torch.load(f'./client_{int(key)}')
 
-# for key, (loader, main_clss) in mixed_data.items():
-#     routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0001)
-#     for epoch in range(200):
-#         print(key, epoch)
-#         for x, y in loader:
-#             y_1hot = one_hot_encode(y, len(CLSS), main_clss)
-#             x = torch.flatten(x, start_dim=1)
-#             o = clients[int(key)](x)
-#             routed, mask = routing(routing_nets[int(key)], clients, x, o, y, main_clss_dict, routing_loss, routing_optim)
-#             #print(torch.argmax(o, dim=1), y_1hot)
-#             # los = loss(o, y_1hot)
-#             # # if len(routed):
-#             # #     los += loss(routed, y_1hot[mask])
-#             # los.backward()
-#             # optim.step()
-#             # optim.zero_grad()
-#             # print(los)
-#
-#     torch.save(routing_nets[int(key)], f'routing_{int(key)}')
+for key, (loader, main_clss) in mixed_data.items():
+    routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0001)
+    for epoch in range(35):
+        print(key, epoch)
+        for x, y in loader:
+            y_1hot = one_hot_encode(y, len(CLSS), main_clss)
+            x = torch.flatten(x, start_dim=1)
+            o = clients[int(key)](x)
+            routed, mask = routing(routing_nets[int(key)], clients, x, o, y, main_clss_dict, routing_loss, routing_optim)
+            #print(torch.argmax(o, dim=1), y_1hot)
+            los = loss(o, y_1hot)
+            # if len(routed):
+            #     los += loss(routed, y_1hot[mask])
+            los.backward()
+            optim.step()
+            optim.zero_grad()
+        test_los(clients[int(key)], routing_nets[int(key)], loss, key)
+    torch.save(routing_nets[int(key)], f'routing_{int(key)}')
 #
 # # winner = p.run(eval_genomes, 6)
 # #
