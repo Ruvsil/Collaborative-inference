@@ -30,7 +30,7 @@ for i in range(NUM_CLIENTS):
     clients[i] = (client_network(i, N_LAYERS, INPUT_DIM, HIDDEN_DIM, OUTPUT_DIM+1))
 
 for key in range(NUM_CLIENTS):
-    clients[int(key)] = torch.load(f'./client_{int(key)}', weights_only=False)
+    clients[int(key)] = torch.load(f'./client_base_{int(key)}', weights_only=False)
 with torch.no_grad():
     for key, client in clients.items():
         client_loss = []
@@ -39,7 +39,8 @@ with torch.no_grad():
             x = torch.flatten(x, start_dim=1)
             o = clients[int(key)](x)
             #print(torch.argmax(o, dim=1), y_1hot)
-            los = loss(o[:,:-1], y_1hot)
+            #los = loss(o[:,:-1], y_1hot)
+            los = loss(o, y_1hot)
             client_loss.append(los)
         print(key, sum(client_loss)/len(client_loss))
         losses.append(sum(client_loss)/len(client_loss))
