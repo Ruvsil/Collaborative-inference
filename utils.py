@@ -2,7 +2,7 @@ import os
 import numpy as np
 import random
 from scipy.stats import entropy
-
+from config import *
 from torch import nn
 from torchvision.datasets import MNIST, CIFAR10
 from torchvision import transforms
@@ -10,40 +10,7 @@ from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler, Data
 import torch
 
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {DEVICE}")
-
-DATASET = 'mnist'
-
-if DATASET == 'mnist':
-    INPUT_DIM = 28 * 28
-else:
-    INPUT_DIM = 32 * 32 * 3
-
-data_path = './datasets'
-transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
-
-if not os.path.exists(data_path):
-    os.mkdir(data_path)
-if DATASET == 'mnist':
-    ds_train = MNIST(data_path, train=True, download=True, transform=transform)
-    ds_test = MNIST(data_path, train=False, download=True, transform=transform)
-if DATASET == 'cifar':
-    ds_train = CIFAR10(data_path, train=True, download=True, transform=transform)
-    ds_test = CIFAR10(data_path, train=False, download=True, transform=transform)
-
-test_loader = DataLoader(ds_test, batch_size=128, shuffle=True)
-CLSS = ds_train.classes
-
-HIDDEN_DIM = 10
-OUTPUT_DIM = len(CLSS)
-N_LAYERS = 3
-
-NUM_CLIENTS = 10
-client_train = True
-
-
-def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len):
+def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_ratio, datasets_len, CLSS):
     ret = {}
     for i in range(num_of_clients):
         main_clss = [i]
@@ -55,14 +22,16 @@ def create_mixed_datasets(class_datasets, num_of_clients, num_main_classes, rnd_
         for c in main_clss:
             base_ds.append(Subset(class_datasets[c], np.arange(int((rnd_ratio * datasets_len) / num_main_classes))))
         # base2 = Subset(class_datasets[cls2], np.arange(int((rnd_ratio*datasets_len)/num_main_classes)))
-        base = base_ds[0]
-        for b in base_ds[1:]:
-            base += b
+        base = ConcatDataset([b for b in base_ds])
+        # for b in base_ds[1:]:
+        #     #base += b
+        #     base = ConcatDataset([base, b])
         rnd = []
         for key, value in class_datasets.items():
             if key not in main_clss:
                 rnd = ConcatDataset([rnd, value])
-        extra = Subset(rnd, random.sample(range(len(rnd)), int((1 - rnd_ratio) * datasets_len)))
+
+        extra = Subset(rnd, random.sample(range(len(rnd)), int((1 - rnd_ratio) * datasets_len)+1))
         print(len(base), len(extra), datasets_len, main_clss)
         ret[i] = (mixed_dataset(base, extra, len(base) + len(extra), main_clss))
     return ret
@@ -102,7 +71,7 @@ class MyDataset(Dataset):
 
 
 class client_network(nn.Module):
-    def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim):
+    def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim, DEVICE):
         super().__init__()
         self.client_id = client_id
         self.net = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU())
@@ -118,7 +87,7 @@ class client_network(nn.Module):
 
 
 class routing_network(nn.Module):
-    def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim):
+    def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim, DEVICE):
         super().__init__()
         self.client_id = client_id
         self.net = nn.Sequential(nn.Linear(input_dim, hidden_dim), nn.ReLU())
@@ -133,52 +102,58 @@ class routing_network(nn.Module):
         return self.net(input)
 
 
-def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim):
-    prediction = torch.argmax(prediction, dim=1)
-    mask = prediction == len(CLSS)
-    input_extracted = input[mask].to(DEVICE)  # Move input to device
-    label_extracted = labels[mask]
-    y = []
-    for labl in label_extracted:
-        y.append(main_clss_dict[int(labl)][0])
-    # print('aaa' , input_extracted, input_extracted.size())
-    o = net(input_extracted)
-    o_max = torch.argmax(o, dim=1)
-    routed = []
+# def routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim):
+#     prediction = torch.argmax(prediction, dim=1)
+#     mask = prediction == len(CLSS)
+#     input_extracted = input[mask].to(DEVICE)  # Move input to device
+#     label_extracted = labels[mask]
+#     y = []
+#     print(main_clss_dict)
+#     for labl in label_extracted:
+#         y.append(main_clss_dict[int(labl)][0])
+#     # print('aaa' , input_extracted, input_extracted.size())
+#     o = net(input_extracted)
+#     o_max = torch.argmax(o, dim=1)
+#     routed = []
+#
+#     for idx, client_id in enumerate(o_max):
+#         routed.append(clients[int(client_id)](input_extracted[idx]))
+#     if routed:
+#         routed = torch.stack(routed)
+#     if len(routed):
+#         y = one_hot_encode(y, NUM_CLIENTS).to(DEVICE)  # Move target tensor to device
+#         # y = torch.tensor(y, dtype=torch.float64)
+#         #print(torch.argmax(y, dim=1))
+#         #print(o_max)
+#         #print('babababaababab', o.size(), y.size())
+#         l = loss(o, y)
+#         print('ext_loss', l)
+#         l.backward()
+#         optim.step()
+#         optim.zero_grad()
+#     return routed, mask
 
-    for idx, client_id in enumerate(o_max):
-        routed.append(clients[int(client_id)](input_extracted[idx]))
-    if routed:
-        routed = torch.stack(routed)
-    if len(routed):
-        y = one_hot_encode(y, NUM_CLIENTS).to(DEVICE)  # Move target tensor to device
-        # y = torch.tensor(y, dtype=torch.float64)
-        #print(torch.argmax(y, dim=1))
-        #print(o_max)
-        #print('babababaababab', o.size(), y.size())
-        l = loss(o, y)
-        print('ext_loss', l)
-        l.backward()
-        optim.step()
-        optim.zero_grad()
-    return routed, mask
 
-
-def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim):
+def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim, DEVICE, entropy_trsh, num_clients):
     prediction = torch.softmax(prediction, dim=1)
     mask = torch.zeros(prediction.size()[0], device=DEVICE)  # Create mask on device
     for i, p in enumerate(prediction):
         entropy_value = entropy(p.detach().cpu().numpy())
-        if entropy_value > 0.3:
+        if entropy_value > entropy_trsh:
             mask[i] += 1
     mask = mask.bool()
     input_extracted = input[mask].to(DEVICE)  # Move input to device
     label_extracted = labels[mask]
     y = []
+    #print(main_clss_dict)
     for labl in label_extracted:
-        y.append(main_clss_dict[int(labl)][0])
+        if main_clss_dict[int(labl)]:
+            y.append(main_clss_dict[int(labl)][0])
+        else:
+            y.append(0)
     # print('aaa' , input_extracted, input_extracted.size())
     o = net(input_extracted)
+    #print(list(net.net[0].parameters()))
     o_max = torch.argmax(o, dim=1)
     routed = []
     for idx, client_id in enumerate(o_max):
@@ -186,7 +161,7 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
     if routed:
         routed = torch.stack(routed)
     if len(routed):
-        y = one_hot_encode(y, NUM_CLIENTS).to(DEVICE)  # Move target tensor to device
+        y = one_hot_encode(y, num_clients).to(DEVICE)  # Move target tensor to device
         # y = torch.tensor(y, dtype=torch.float64)
         #print(torch.argmax(y, dim=1))
         #print(o_max)
@@ -196,12 +171,22 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
         l.backward()
         optim.step()
         optim.zero_grad()
+       #print(list(net.net[0].parameters()))
     return routed, mask
+def accuracy(prediction, target):
+    prediction = torch.argmax(prediction, dim=1)
+    correct = 0
+    for p,t in zip(prediction, target):
+        if t[p] == 1:
+            correct += 1
+    return correct/len(prediction)
 
 
-def test_los(clients, routing_net, loss, key):
+def test_los(clients, routing_net, loss, key, test_loader, DEVICE, CLSS, ENTROPY_THRSH):
     with torch.no_grad():
+        conf_mat = np.zeros((len(CLSS), len(CLSS)))
         client_loss = []
+        client_acc = []
         local_client = clients[int(key)]
         for x, y in test_loader:
             x = x.to(DEVICE)  # Move input to device
@@ -215,7 +200,7 @@ def test_los(clients, routing_net, loss, key):
             mask = torch.zeros(o_max.size()[0], device=DEVICE)  # Create mask on device
             for i, p in enumerate(o_max):
                 entropy_value = entropy(p.detach().cpu().numpy())
-                if entropy_value > 0.3:
+                if entropy_value > ENTROPY_THRSH:
                     mask[i] += 1
             mask = mask.bool()
             extracted = x[mask]
@@ -229,14 +214,19 @@ def test_los(clients, routing_net, loss, key):
                 routed = None
                 # print(torch.argmax(o, dim=1), y_1hot)
                 o[mask] = prediction
-
+            for xo, yo in zip(o, y_1hot):
+                conf_mat[torch.argmax(yo)][torch.argmax(xo)] += 1
             los = loss(o, y_1hot)
-
+            acc = accuracy(o, y_1hot)
             # print(torch.argmax(o[:,:-1],dim=1).float())
             # print(torch.argmax(y_1hot,dim=1).float())
             # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
             client_loss.append(los)
-        print(key, sum(client_loss) / len(client_loss))
+            client_acc.append(acc)
+        print(key, 'loss', sum(client_loss) / len(client_loss))
+        print(key, 'acc',  sum(client_acc) / len(client_acc))
+        print(conf_mat)
+
 
 
 def one_hot_encode(batch, num_classes, main_clss=None):
