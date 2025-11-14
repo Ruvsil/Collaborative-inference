@@ -173,6 +173,7 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
         optim.zero_grad()
        #print(list(net.net[0].parameters()))
     return routed, mask
+
 def accuracy(prediction, target):
     prediction = torch.argmax(prediction, dim=1)
     correct = 0
@@ -216,6 +217,11 @@ def test_los(clients, routing_net, loss, key, test_loader, DEVICE, CLSS, ENTROPY
                 o[mask] = prediction
             for xo, yo in zip(o, y_1hot):
                 conf_mat[torch.argmax(yo)][torch.argmax(xo)] += 1
+
+            row_sums = conf_mat.sum(axis=1)
+            row_sums_reshaped = row_sums[:, np.newaxis]
+            conf_mat = conf_mat / row_sums_reshaped
+            
             los = loss(o, y_1hot)
             acc = accuracy(o, y_1hot)
             # print(torch.argmax(o[:,:-1],dim=1).float())

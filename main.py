@@ -62,12 +62,12 @@ import os
 #         print('==========================')
 
 
-def main(param, exp_dir):
+def main(param, data, exp_dir):
 
     clients = {}
     routing_nets = {}
 
-    DEVICE = param['device']
+    DEVICE = data['device']
     CLSS = param['clss']
 
     for i in range(param['num_clients']):
@@ -91,27 +91,27 @@ def main(param, exp_dir):
     # p.add_reporter(stats)
     # p.add_reporter(neat.Checkpointer(5))
     class_indices = defaultdict(list)
-    for i, label in enumerate(param['ds_train'].targets):
+    for i, label in enumerate(data['ds_train'].targets):
         class_indices[int(label)].append(i)
 
     clss_data = {}
     for class_label, indices in class_indices.items():
-        clss_data[class_label] = MyDataset(Subset(param['ds_train'], indices))
+        clss_data[class_label] = MyDataset(Subset(data['ds_train'], indices))
 
     main_clss_dict = defaultdict(list)
     clss_client_dict = defaultdict(list)
-    mixed_data = create_mixed_datasets(clss_data, num_of_clients=param['num_clients'], num_main_classes=3, rnd_ratio=param['main_clss_percent'],
-                                       datasets_len=20000, CLSS=CLSS)
+    mixed_data = create_mixed_datasets(clss_data, num_of_clients=param['num_clients'], num_main_classes=param['num_main_clss'], rnd_ratio=param['main_clss_percent'],
+                                       datasets_len=20, CLSS=CLSS)
 
     for id, dat in mixed_data.items():
         for cls in dat.main_clss:
             clss_client_dict[id].append(cls)
             main_clss_dict[cls].append(id)
-        mixed_data[id] = (DataLoader(dat, batch_size=2048, shuffle=True), dat.main_clss)
+        mixed_data[id] = (DataLoader(dat, batch_size=256, shuffle=True), dat.main_clss)
     if param['client_train']:
         for key, (loader, main_clss) in mixed_data.items():
             optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.1)
-            for epoch in range(30):
+            for epoch in range(1):
                 print(key, epoch)
                 for x, y in loader:
                     x = x.to(DEVICE)  # Move input to device
@@ -135,9 +135,9 @@ def main(param, exp_dir):
             clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(key)}.pt'), map_location=DEVICE, weights_only=True))
 
     for key, (loader, main_clss) in mixed_data.items():
-        routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0005)
-        client_optim = torch.optim.AdamW(clients[int(key)].parameters(), lr=0.0005)
-        for epoch in range(50):
+        routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.005)
+        client_optim = torch.optim.AdamW(clients[int(key)].parameters(), lr=0.005)
+        for epoch in range(1):
             print(key, epoch)
             for x, y in loader:
                 # for name, param in clients[int(key)].named_parameters():
@@ -157,7 +157,8 @@ def main(param, exp_dir):
                 client_optim.step()
                 client_optim.zero_grad()
             if epoch % 10 == 0:
-                test_los(clients, routing_nets[int(key)],  loss, key, param['test_loader'],param['device'], param['clss'], param['entropy_threshold'])
+                print('l')
+                test_los(clients, routing_nets[int(key)],  loss, key, data['test_loader'], DEVICE, param['clss'], param['entropy_threshold'])
         torch.save(routing_nets[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'routing_{int(key)}.pt'))
         torch.save(clients[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'client_{int(key)}.pt'))
     return clients, routing_nets

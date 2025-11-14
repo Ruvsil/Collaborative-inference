@@ -27,13 +27,19 @@ def get_params():
         ds_train = CIFAR10(data_path, train=True, download=True, transform=transform)
         ds_test = CIFAR10(data_path, train=False, download=True, transform=transform)
 
+    data_dict = {
+        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        'ds_train': ds_train,
+        'ds_test': ds_test,
+        'test_loader': DataLoader(ds_test, batch_size=128, shuffle=True),
+    }
     params_dict = {
         'input_dim' : input_dim,
         'dataset' : dataset,
-        'device' : torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        'ds_train' : ds_train,
-        'ds_test' : ds_test,
-        'test_loader' : DataLoader(ds_test, batch_size=128, shuffle=True),
+        #'device' : torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        #'ds_train' : ds_train,
+        #'ds_test' : ds_test,
+        #'test_loader' : DataLoader(ds_test, batch_size=128, shuffle=True),
         'clss' : ds_train.classes,
         'hidden_dim' : 2048,
         'rout_hidden_dim' : 2048,
@@ -41,6 +47,7 @@ def get_params():
         'n_layers' : 3,
         'rout_n_layers' : 10,
         'num_clients' : 10,
+        'num_main_clss' : 3,
         'entropy_threshold' : 0.3,
         'main_clss_percent' : 0.6,
         'client_train' : True,
@@ -58,4 +65,4 @@ def get_params():
     # params_dict['num_clients'] = 10
     # ENTROPY_TRSH = 0.3
     # client_train = True
-    return params_dict
+    return params_dict, data_dict
