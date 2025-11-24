@@ -31,7 +31,7 @@ def get_params():
         'device': torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         'ds_train': ds_train,
         'ds_test': ds_test,
-        'test_loader': DataLoader(ds_test, batch_size=128, shuffle=True),
+        'test_loader': DataLoader(ds_test, batch_size=2048, shuffle=True),
     }
     params_dict = {
         'input_dim' : input_dim,
@@ -44,12 +44,12 @@ def get_params():
         'hidden_dim' : 2048,
         'rout_hidden_dim' : 2048,
         'output_dim' : len(ds_train.classes),
-        'n_layers' : 3,
+        'n_layers' : 4,
         'rout_n_layers' : 10,
         'num_clients' : 10,
         'num_main_clss' : 3,
         'entropy_threshold' : 0.3,
-        'main_clss_percent' : 0.6,
+        'main_clss_percent' : 0.8,
         'client_train' : True,
     }
 

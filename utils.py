@@ -7,6 +7,8 @@ from torch import nn
 from torchvision.datasets import MNIST, CIFAR10
 from torchvision import transforms
 from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler, DataLoader
+from collections import defaultdict
+
 import torch
 
 
@@ -172,6 +174,7 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
         optim.step()
         optim.zero_grad()
        #print(list(net.net[0].parameters()))
+    print('routing_accuracy: ', accuracy(o,y))
     return routed, mask
 
 def accuracy(prediction, target):
@@ -183,7 +186,7 @@ def accuracy(prediction, target):
     return correct/len(prediction)
 
 
-def test_los(clients, routing_net, loss, key, test_loader, DEVICE, CLSS, ENTROPY_THRSH):
+def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, ENTROPY_THRSH):
     with torch.no_grad():
         conf_mat = np.zeros((len(CLSS), len(CLSS)))
         client_loss = []
@@ -222,17 +225,18 @@ def test_los(clients, routing_net, loss, key, test_loader, DEVICE, CLSS, ENTROPY
             row_sums_reshaped = row_sums[:, np.newaxis]
             conf_mat = conf_mat / row_sums_reshaped
             
-            los = loss(o, y_1hot)
+            #los = loss(o, y_1hot)
             acc = accuracy(o, y_1hot)
             # print(torch.argmax(o[:,:-1],dim=1).float())
             # print(torch.argmax(y_1hot,dim=1).float())
             # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
-            client_loss.append(los)
+            #client_loss.append(los)
             client_acc.append(acc)
-        print(key, 'loss', sum(client_loss) / len(client_loss))
-        print(key, 'acc',  sum(client_acc) / len(client_acc))
+        #print(key, 'loss', sum(client_loss) / len(client_loss))
+        mean_acc = sum(client_acc)/len(client_acc)
+        print(key, 'acc', mean_acc)
         print(conf_mat)
-
+        return mean_acc, conf_mat
 
 
 def one_hot_encode(batch, num_classes, main_clss=None):
@@ -248,3 +252,109 @@ def one_hot_encode(batch, num_classes, main_clss=None):
             # tensor[y] -= 1
         ret.append(tensor)
     return torch.stack(ret)
+
+
+def test(exp_dir, param, data):
+    clients = {}
+    routing_nets = {}
+    loss = torch.nn.CrossEntropyLoss().to(data['device'])  # Move loss to device
+    routing_loss = torch.nn.CrossEntropyLoss().to(data['device'])  # Move loss to device
+
+    class_indices = defaultdict(list)
+    for i, label in enumerate(data['ds_train'].targets):
+        class_indices[int(label)].append(i)
+
+    clss_data = {}
+    for class_label, indices in class_indices.items():
+        clss_data[class_label] = MyDataset(Subset(data['ds_train'], indices))
+
+    losses = []
+
+    # Initialize networks and load state dicts
+    for i in range(param['num_clients']):
+        # client_network moves itself to DEVICE in its __init__
+        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], input['output_dim']))
+        # Load state dict
+        # Using map_location to ensure the loaded model is on the current device
+        clients[int(i)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(i)}.pt'), map_location=data['device'], weights_only=True))
+
+    with torch.no_grad():
+        for key, client in clients.items():
+            client_loss = []
+            for x, y in data['test_loader']:
+                x = x.to(data['device'])  # Move input to device
+                y = y.to(data['device'])  # Move labels to device
+                y_1hot = one_hot_encode(y.cpu(), len(param['clss'])).to(data['device'])  # Create one-hot on device
+                x = torch.flatten(x, start_dim=1)
+                o = clients[int(key)](x)
+
+                # print(torch.argmax(o, dim=1), y_1hot)
+                # los = loss(o[:,:-1], y_1hot)
+                los = loss(o, y_1hot)
+                client_loss.append(los)
+            # Move loss to CPU for numpy sum/average calculation (optional but safer)
+            print(key, sum(l.item() for l in client_loss) / len(client_loss))
+            losses.append(sum(l.item() for l in client_loss) / len(client_loss))
+    print(losses)
+    print(sum(losses) / len(losses))
+
+    losses = []
+    accs = []
+    # Re-initialize networks and load state dicts
+    for i in range(param['num_clients']):
+        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim']))
+        routing_nets[i] = (routing_network(i, 10, param['input_dim'], 2048, param['num_clients']))
+
+    for key in range(param['num_clients']):
+        # Load state dicts
+        clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_{int(i)}.pt'), map_location=data['device'], weights_only=True))
+        routing_nets[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'routing_{int(i)}.pt'), map_location=data['device'], weights_only=True))
+
+    with torch.no_grad():
+        for key, client in clients.items():
+            test_los(clients, routing_nets[int(key)], loss, key)
+            client_loss = []
+            client_acc = []
+            for x, y in data['test_loader']:
+                x = x.to(data['device'])  # Move input to device
+                y = y.to(data['device'])  # Move labels to device
+                y_1hot = one_hot_encode(y.cpu(), len(param['clss'])).to(data['device'])  # Create one-hot on device
+                x = torch.flatten(x, start_dim=1)
+                o = clients[int(key)](x)
+
+                o_max = torch.softmax(o, dim=1)
+
+                mask = torch.zeros(o_max.size()[0], device=data['device'])  # Create mask on device
+                for i, p in enumerate(o_max):
+                    entropy_value = entropy(p.detach().cpu().numpy())
+                    if entropy_value > param['entropy_threshold']:
+                        mask[i] += 1
+                mask = mask.bool()
+                extracted = x[mask]
+                prediction = []
+                if len(extracted) > 0:
+                    routed = torch.argmax(routing_nets[key](extracted), dim=1)
+
+                    for i, (sample, cli) in enumerate(zip(extracted, routed)):
+                        prediction.append(clients[int(cli)](sample))
+                    prediction = torch.stack(prediction)
+                    routed = None
+                    # print(torch.argmax(o, dim=1), y_1hot)
+                    o[mask] = prediction
+
+                los = loss(o, y_1hot)
+                acc = accuracy(o, y_1hot)
+                # print(torch.argmax(o[:,:-1],dim=1).float())
+                # print(torch.argmax(y_1hot,dim=1).float())
+                # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
+                client_loss.append(los)
+                client_acc.append(acc)
+            # Move loss to CPU for numpy sum/average calculation (optional but safer)
+            print(key, sum(l.item() for l in client_loss) / len(client_loss))
+            losses.append(sum(l.item() for l in client_loss) / len(client_loss))
+            print(key, sum(client_acc) / len(client_acc))
+            accs.append(sum(client_acc) / len(client_acc))
+    print(losses)
+    print(sum(losses) / len(losses))
+    print(accs)
+    print(sum(accs) / len(accs))
