@@ -4,6 +4,7 @@ import random
 from scipy.stats import entropy
 from config import *
 from torch import nn
+from torch.nn.functional import one_hot
 from torchvision.datasets import MNIST, CIFAR10
 from torchvision import transforms
 from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler, DataLoader
@@ -138,12 +139,9 @@ class routing_network(nn.Module):
 
 def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim, DEVICE, entropy_trsh, num_clients):
     prediction = torch.softmax(prediction, dim=1)
-    mask = torch.zeros(prediction.size()[0], device=DEVICE)  # Create mask on device
-    for i, p in enumerate(prediction):
-        entropy_value = entropy(p.detach().cpu().numpy())
-        if entropy_value > entropy_trsh:
-            mask[i] += 1
-    mask = mask.bool()
+    log_o_max = torch.log(prediction)
+    entropy_values = -torch.sum(prediction * log_o_max, dim=1)
+    mask = entropy_values > entropy_trsh
     input_extracted = input[mask].to(DEVICE)  # Move input to device
     label_extracted = labels[mask]
     y = []
@@ -186,7 +184,7 @@ def accuracy(prediction, target):
     return correct/len(prediction)
 
 
-def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, ENTROPY_THRSH):
+def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, entropy_trsh):
     with torch.no_grad():
         conf_mat = np.zeros((len(CLSS), len(CLSS)))
         client_loss = []
@@ -201,12 +199,10 @@ def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, ENTROPY_THRSH
 
             o_max = torch.softmax(o, dim=1)
 
-            mask = torch.zeros(o_max.size()[0], device=DEVICE)  # Create mask on device
-            for i, p in enumerate(o_max):
-                entropy_value = entropy(p.detach().cpu().numpy())
-                if entropy_value > ENTROPY_THRSH:
-                    mask[i] += 1
-            mask = mask.bool()
+            log_o_max = torch.log(o_max)
+            entropy_values = -torch.sum(o_max * log_o_max, dim=1)
+            mask = entropy_values > entropy_trsh
+
             extracted = x[mask]
             prediction = []
             if len(extracted) > 0:
@@ -232,6 +228,7 @@ def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, ENTROPY_THRSH
             # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
             #client_loss.append(los)
             client_acc.append(acc)
+            break
         #print(key, 'loss', sum(client_loss) / len(client_loss))
         mean_acc = sum(client_acc)/len(client_acc)
         print(key, 'acc', mean_acc)
@@ -272,8 +269,7 @@ def test(exp_dir, param, data):
 
     # Initialize networks and load state dicts
     for i in range(param['num_clients']):
-        # client_network moves itself to DEVICE in its __init__
-        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], input['output_dim']))
+        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
         # Load state dict
         # Using map_location to ensure the loaded model is on the current device
         clients[int(i)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(i)}.pt'), map_location=data['device'], weights_only=True))
@@ -302,8 +298,8 @@ def test(exp_dir, param, data):
     accs = []
     # Re-initialize networks and load state dicts
     for i in range(param['num_clients']):
-        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim']))
-        routing_nets[i] = (routing_network(i, 10, param['input_dim'], 2048, param['num_clients']))
+        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
+        routing_nets[i] = (routing_network(i, param['rout_n_layers'], param['input_dim'], param['rout_hidden_dim'], param['num_clients'],  DEVICE=data['device']))
 
     for key in range(param['num_clients']):
         # Load state dicts
@@ -312,7 +308,8 @@ def test(exp_dir, param, data):
 
     with torch.no_grad():
         for key, client in clients.items():
-            test_los(clients, routing_nets[int(key)], loss, key)
+            test_los(clients, routing_nets[int(key)], key, data['test_loader'], data['device'], param['clss'],
+                     param['entropy_threshold'])
             client_loss = []
             client_acc = []
             for x, y in data['test_loader']:

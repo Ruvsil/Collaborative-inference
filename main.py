@@ -101,7 +101,7 @@ def main(param, data, exp_dir):
     main_clss_dict = defaultdict(list)
     clss_client_dict = defaultdict(list)
     mixed_data = create_mixed_datasets(clss_data, num_of_clients=param['num_clients'], num_main_classes=param['num_main_clss'], rnd_ratio=param['main_clss_percent'],
-                                       datasets_len=15000, CLSS=CLSS)
+                                       datasets_len=10, CLSS=CLSS)
 
     for id, dat in mixed_data.items():
         for cls in dat.main_clss:
@@ -111,12 +111,12 @@ def main(param, data, exp_dir):
     if param['client_train']:
         for key, (loader, main_clss) in mixed_data.items():
             optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.1)
-            for epoch in range(20):
+            for epoch in range(2):
                 print(key, epoch)
                 for x, y in loader:
                     x = x.to(DEVICE)  # Move input to device
                     y = y.to(DEVICE)  # Move labels to device
-                    y_1hot = one_hot_encode(y.cpu(), len(CLSS)).to(DEVICE)  # Create one-hot on device
+                    y_1hot = one_hot_encode(y, len(CLSS)).to(DEVICE)  # Create one-hot on device
                     x = torch.flatten(x, start_dim=1)
                     o = clients[int(key)](x)
                     # print(torch.argmax(o, dim=1), y_1hot)
@@ -137,7 +137,7 @@ def main(param, data, exp_dir):
     for key, (loader, main_clss) in mixed_data.items():
         routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0005)
         client_optim = torch.optim.AdamW(clients[int(key)].parameters(), lr=0.0005)
-        for epoch in range(30):
+        for epoch in range(2):
             print(key, epoch)
             for x, y in loader:
                 # for name, param in clients[int(key)].named_parameters():
