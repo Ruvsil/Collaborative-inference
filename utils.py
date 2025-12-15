@@ -172,7 +172,8 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
         optim.step()
         optim.zero_grad()
        #print(list(net.net[0].parameters()))
-    print('routing_accuracy: ', accuracy(o,y))
+        print('routing_accuracy: ', accuracy(o,y))
+        print('routing_loss: ', l)
     return routed, mask
 
 def accuracy(prediction, target):
@@ -223,12 +224,12 @@ def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, entropy_trsh)
             
             #los = loss(o, y_1hot)
             acc = accuracy(o, y_1hot)
+            #f1 = F1Score(o, y_1hot)
             # print(torch.argmax(o[:,:-1],dim=1).float())
             # print(torch.argmax(y_1hot,dim=1).float())
             # print(loss(torch.argmax(o[:,:-1],dim=1).float(),torch.argmax(y_1hot,dim=1).float()))
             #client_loss.append(los)
             client_acc.append(acc)
-            break
         #print(key, 'loss', sum(client_loss) / len(client_loss))
         mean_acc = sum(client_acc)/len(client_acc)
         print(key, 'acc', mean_acc)
@@ -254,29 +255,32 @@ def one_hot_encode(batch, num_classes, main_clss=None):
 def test(exp_dir, param, data):
     clients = {}
     routing_nets = {}
+    conf_mat = np.zeros((len(param['clss']), len(param['clss'])))
+
     loss = torch.nn.CrossEntropyLoss().to(data['device'])  # Move loss to device
     routing_loss = torch.nn.CrossEntropyLoss().to(data['device'])  # Move loss to device
 
-    class_indices = defaultdict(list)
-    for i, label in enumerate(data['ds_train'].targets):
-        class_indices[int(label)].append(i)
-
-    clss_data = {}
-    for class_label, indices in class_indices.items():
-        clss_data[class_label] = MyDataset(Subset(data['ds_train'], indices))
+    # class_indices = defaultdict(list)
+    # for i, label in enumerate(data['ds_train'].targets):
+    #     class_indices[int(label)].append(i)
+    #
+    # clss_data = {}
+    # for class_label, indices in class_indices.items():
+    #     clss_data[class_label] = MyDataset(Subset(data['ds_train'], indices))
 
     losses = []
-
+    accs = []
     # Initialize networks and load state dicts
-    for i in range(param['num_clients']):
-        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
+    for key in range(param['num_clients']):
+        clients[key] = (client_network(key, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
         # Load state dict
         # Using map_location to ensure the loaded model is on the current device
-        clients[int(i)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(i)}.pt'), map_location=data['device'], weights_only=True))
+        clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(key)}.pt'), map_location=data['device'], weights_only=False))
 
     with torch.no_grad():
         for key, client in clients.items():
             client_loss = []
+            client_acc = []
             for x, y in data['test_loader']:
                 x = x.to(data['device'])  # Move input to device
                 y = y.to(data['device'])  # Move labels to device
@@ -287,24 +291,34 @@ def test(exp_dir, param, data):
                 # print(torch.argmax(o, dim=1), y_1hot)
                 # los = loss(o[:,:-1], y_1hot)
                 los = loss(o, y_1hot)
+                acc = accuracy(o, y_1hot)
                 client_loss.append(los)
+                client_acc.append(acc)
             # Move loss to CPU for numpy sum/average calculation (optional but safer)
             print(key, sum(l.item() for l in client_loss) / len(client_loss))
             losses.append(sum(l.item() for l in client_loss) / len(client_loss))
+            print(key, sum(client_acc) / len(client_acc))
+            accs.append(sum(client_acc) / len(client_acc))
     print(losses)
     print(sum(losses) / len(losses))
+    print(key, sum(client_acc) / len(client_acc))
+    accs.append(sum(client_acc) / len(client_acc))
+
+    with open(os.path.join(exp_dir, 'results', 'base_metrics.txt'), 'w') as f:
+        f.write(str(sum(losses) / len(losses)))
+        f.write(str(sum(accs) / len(accs)))
 
     losses = []
     accs = []
     # Re-initialize networks and load state dicts
     for i in range(param['num_clients']):
         clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
-        routing_nets[i] = (routing_network(i, param['rout_n_layers'], param['input_dim'], param['rout_hidden_dim'], param['num_clients'],  DEVICE=data['device']))
+        routing_nets[i] = (routing_network(i, param['route_n_layers'], param['input_dim'], param['route_hidden_dim'], param['num_clients'],  DEVICE=data['device']))
 
     for key in range(param['num_clients']):
         # Load state dicts
-        clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_{int(i)}.pt'), map_location=data['device'], weights_only=True))
-        routing_nets[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'routing_{int(i)}.pt'), map_location=data['device'], weights_only=True))
+        clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_{int(key)}.pt'), map_location=data['device'], weights_only=False))
+        routing_nets[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'routing_{int(key)}.pt'), map_location=data['device'], weights_only=False))
 
     with torch.no_grad():
         for key, client in clients.items():
@@ -338,7 +352,14 @@ def test(exp_dir, param, data):
                     routed = None
                     # print(torch.argmax(o, dim=1), y_1hot)
                     o[mask] = prediction
+                for xo, yo in zip(o, y_1hot):
+                    conf_mat[torch.argmax(yo)][torch.argmax(xo)] += 1
 
+                row_sums = conf_mat.sum(axis=1)
+                row_sums_reshaped = row_sums[:, np.newaxis]
+                conf_mat = conf_mat / row_sums_reshaped
+                with open(os.path.join(exp_dir, 'results', f'confusion_{key}.txt'), 'w') as f:
+                    f.write(str(conf_mat))
                 los = loss(o, y_1hot)
                 acc = accuracy(o, y_1hot)
                 # print(torch.argmax(o[:,:-1],dim=1).float())
@@ -351,7 +372,12 @@ def test(exp_dir, param, data):
             losses.append(sum(l.item() for l in client_loss) / len(client_loss))
             print(key, sum(client_acc) / len(client_acc))
             accs.append(sum(client_acc) / len(client_acc))
+    with open(os.path.join(exp_dir,'results','metrics.txt'), 'w') as f:
+        f.write(str(sum(losses)/len(losses)))
+        f.write(str(sum(accs)/len(accs)))
+
     print(losses)
     print(sum(losses) / len(losses))
     print(accs)
     print(sum(accs) / len(accs))
+

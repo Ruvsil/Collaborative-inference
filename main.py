@@ -63,7 +63,7 @@ import os
 
 
 def main(param, data, exp_dir):
-
+    #results = {}
     clients = {}
     routing_nets = {}
 
@@ -73,7 +73,7 @@ def main(param, data, exp_dir):
     for i in range(param['num_clients']):
         # client_network and routing_network move themselves to DEVICE in their __init__
         clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=DEVICE))
-        routing_nets[i] = (routing_network(i, param['rout_n_layers'], param['input_dim'], param['rout_hidden_dim'], param['num_clients'], DEVICE=DEVICE))
+        routing_nets[i] = (routing_network(i, param['route_n_layers'], param['input_dim'], param['route_hidden_dim'], param['num_clients'], DEVICE=DEVICE))
 
     loss = torch.nn.CrossEntropyLoss().to(DEVICE)  # Move loss function to device
     routing_loss = torch.nn.CrossEntropyLoss().to(DEVICE)  # Move loss function to device
@@ -101,7 +101,7 @@ def main(param, data, exp_dir):
     main_clss_dict = defaultdict(list)
     clss_client_dict = defaultdict(list)
     mixed_data = create_mixed_datasets(clss_data, num_of_clients=param['num_clients'], num_main_classes=param['num_main_clss'], rnd_ratio=param['main_clss_percent'],
-                                       datasets_len=10, CLSS=CLSS)
+                                       datasets_len=10000, CLSS=CLSS)
 
     for id, dat in mixed_data.items():
         for cls in dat.main_clss:
@@ -111,7 +111,10 @@ def main(param, data, exp_dir):
     if param['client_train']:
         for key, (loader, main_clss) in mixed_data.items():
             optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.1)
-            for epoch in range(2):
+            #results[key] = {}
+            #results[key]['base'] = {}
+            for epoch in range(20):
+                #results[key]['base'][epoch] = []
                 print(key, epoch)
                 for x, y in loader:
                     x = x.to(DEVICE)  # Move input to device
@@ -126,8 +129,8 @@ def main(param, data, exp_dir):
                     los.backward()
                     optim.step()
                     optim.zero_grad()
+                    #results[key]['base'][epoch].append(los)
                     # print(los)
-
             torch.save(clients[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'client_base_{int(key)}.pt'))
     else:
         for key, (loader, main_clss) in mixed_data.items():
@@ -137,7 +140,10 @@ def main(param, data, exp_dir):
     for key, (loader, main_clss) in mixed_data.items():
         routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0005)
         client_optim = torch.optim.AdamW(clients[int(key)].parameters(), lr=0.0005)
-        for epoch in range(2):
+        #results[key] = {}
+        #results[key]['route'] = {}
+        for epoch in range(35):
+            #results[key]['route'][epoch] = []
             print(key, epoch)
             for x, y in loader:
                 # for name, param in clients[int(key)].named_parameters():
@@ -150,18 +156,20 @@ def main(param, data, exp_dir):
                 routed, mask = entropy_routing(routing_nets[int(key)], clients, x, o, y, main_clss_dict, routing_loss,
                                                routing_optim, DEVICE=DEVICE, entropy_trsh=param['entropy_threshold'], num_clients=param['num_clients'])
                 # print(torch.argmax(o, dim=1), y_1hot)
-                o[mask] = routed
+                if len(routed):
+                    o[mask] = routed
                 los = loss(o, y_1hot)
                 # if len(routed):
                 #     los += loss(routed, y_1hot[mask])
                 los.backward()
                 client_optim.step()
                 client_optim.zero_grad()
+                #results[key]['route'][epoch].append(los)
             if epoch % 10 == 0:
                 test_los(clients, routing_nets[int(key)], key, data['test_loader'], DEVICE, param['clss'], param['entropy_threshold'])
         torch.save(routing_nets[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'routing_{int(key)}.pt'))
         torch.save(clients[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'client_{int(key)}.pt'))
-    return clients, routing_nets
+    return clients, routing_nets#, results
 # # winner = p.run(eval_genomes, 6)
 # #
 # # print('\nBest genome:\n{!s}'.format(winner))

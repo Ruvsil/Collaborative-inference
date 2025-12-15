@@ -10,13 +10,16 @@ from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler, Data
 import torch
 
 def get_params():
-    dataset = 'cifar'
+    dataset = 'mnist'
     if dataset == 'mnist':
         input_dim = 28 * 28
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+
     else:
         input_dim = 32 * 32 * 3
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))])
+
     data_path = './datasets'
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
     if not os.path.exists(data_path):
         os.mkdir(data_path)
@@ -41,11 +44,11 @@ def get_params():
         #'ds_test' : ds_test,
         #'test_loader' : DataLoader(ds_test, batch_size=128, shuffle=True),
         'clss' : ds_train.classes,
-        'hidden_dim' : 20,
-        'rout_hidden_dim' : 20,
+        'hidden_dim' : 2048,
+        'route_hidden_dim' : 2048,
         'output_dim' : len(ds_train.classes),
-        'n_layers' : 2,
-        'rout_n_layers' : 2,
+        'n_layers' : 4,
+        'route_n_layers' : 10,
         'num_clients' : 10,
         'num_main_clss' : 3,
         'entropy_threshold' : 0.3,
