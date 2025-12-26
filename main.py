@@ -72,7 +72,7 @@ def main(param, data, exp_dir):
 
     for i in range(param['num_clients']):
         # client_network and routing_network move themselves to DEVICE in their __init__
-        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=DEVICE))
+        clients[i] = (client_network_cnn(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=DEVICE))
         routing_nets[i] = (routing_network(i, param['route_n_layers'], param['input_dim'], param['route_hidden_dim'], param['num_clients'], DEVICE=DEVICE))
 
     loss = torch.nn.CrossEntropyLoss().to(DEVICE)  # Move loss function to device
@@ -120,8 +120,10 @@ def main(param, data, exp_dir):
                     x = x.to(DEVICE)  # Move input to device
                     y = y.to(DEVICE)  # Move labels to device
                     y_1hot = one_hot_encode(y, len(CLSS)).to(DEVICE)  # Create one-hot on device
-                    x = torch.flatten(x, start_dim=1)
-                    o = clients[int(key)](x)
+
+                    encoded = clients[int(key)].encode(x)
+                    encoded = torch.flatten(encoded, start_dim=1)
+                    o = clients[int(key)](encoded)
                     # print(torch.argmax(o, dim=1), y_1hot)
                     los = loss(o, y_1hot)
                     # if len(routed):
@@ -146,14 +148,17 @@ def main(param, data, exp_dir):
             #results[key]['route'][epoch] = []
             print(key, epoch)
             for x, y in loader:
+                print('x', x.shape)
                 # for name, param in clients[int(key)].named_parameters():
                 #     print(name,param)
                 x = x.to(DEVICE)  # Move input to device
                 y = y.to(DEVICE)  # Move labels to device
                 y_1hot = one_hot_encode(y.cpu(), len(CLSS)).to(DEVICE)  # Create one-hot on device
+                encoded = clients[int(key)].encode(x)
+                encoded = torch.flatten(encoded, start_dim=1)
                 x = torch.flatten(x, start_dim=1)
-                o = clients[int(key)](x)
-                routed, mask = entropy_routing(routing_nets[int(key)], clients, x, o, y, main_clss_dict, routing_loss,
+                o = clients[int(key)](encoded)
+                routed, mask = entropy_routing(routing_nets[int(key)], clients, x, encoded, o, y, main_clss_dict, routing_loss,
                                                routing_optim, DEVICE=DEVICE, entropy_trsh=param['entropy_threshold'], num_clients=param['num_clients'])
                 # print(torch.argmax(o, dim=1), y_1hot)
                 if len(routed):

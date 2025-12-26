@@ -10,7 +10,7 @@ import os
 
 np.set_printoptions(suppress=True, precision=2)
 
-experiment = 'prova01'
+experiment = 'small01'
 exp_dir = os.path.join(os.getcwd(), 'experiments', experiment)
 
 with open(os.path.join(exp_dir, 'configuration.json'), 'r') as f:

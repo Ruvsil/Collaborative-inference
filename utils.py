@@ -72,6 +72,27 @@ class MyDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
+class client_network_cnn(nn.Module):
+    def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim, DEVICE):
+        super().__init__()
+        self.client_id = client_id
+        self.cnn1 = nn.Sequential(nn.Conv2d(in_channels=1,out_channels=1,kernel_size=(5,5), padding=2), nn.MaxPool2d((2,2)))
+        self.cnn2 = nn.Sequential(nn.Conv2d(in_channels=1,out_channels=1,kernel_size=(3,3),padding=2), nn.MaxPool2d((2,2)))
+        self.cnn3 = nn.Sequential(nn.Conv2d(in_channels=1,out_channels=1,kernel_size=(2,2),padding=2), nn.MaxPool2d((2,2)))
+        self.cnn = nn.Sequential(self.cnn1,nn.Sigmoid(),self.cnn2,nn.Sigmoid(),self.cnn3,nn.Sigmoid())
+        self.net = nn.Sequential(nn.Linear(25, hidden_dim), nn.ReLU())
+        for lay in range(n_layers):
+            self.net.append(nn.Linear(hidden_dim, hidden_dim))
+            self.net.append(nn.ReLU())
+        self.net.append(nn.Linear(hidden_dim, output_dim))
+        # self.net.append(nn.Softmax())
+        self.to(DEVICE)  # Move the entire network to the device
+
+    def encode(self, input):
+        return self.cnn(input)
+
+    def forward(self, input):
+        return self.net(input)
 
 class client_network(nn.Module):
     def __init__(self, client_id, n_layers, input_dim, hidden_dim, output_dim, DEVICE):
@@ -137,13 +158,19 @@ class routing_network(nn.Module):
 #     return routed, mask
 
 
-def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, loss, optim, DEVICE, entropy_trsh, num_clients):
+def entropy_routing(net, clients, input, encoded_input, prediction, labels, main_clss_dict, loss, optim, DEVICE, entropy_trsh, num_clients):
     prediction = torch.softmax(prediction, dim=1)
+    print('prediction',prediction)
     log_o_max = torch.log(prediction)
+    print('log_o_max',log_o_max)
     entropy_values = -torch.sum(prediction * log_o_max, dim=1)
     mask = entropy_values > entropy_trsh
     input_extracted = input[mask].to(DEVICE)  # Move input to device
+    encoded_extracted = encoded_input[mask].to(DEVICE)
     label_extracted = labels[mask]
+    print('entropy', entropy_values)
+    print('entropy_mean',sum(entropy_values)/len(entropy_values))
+    print('routed_percentage',len(input_extracted)/len(prediction))
     y = []
     #print(main_clss_dict)
     for labl in label_extracted:
@@ -157,7 +184,7 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
     o_max = torch.argmax(o, dim=1)
     routed = []
     for idx, client_id in enumerate(o_max):
-        routed.append(clients[int(client_id)](input_extracted[idx]))
+        routed.append(clients[int(client_id)](encoded_extracted[idx]))
     if routed:
         routed = torch.stack(routed)
     if len(routed):
@@ -171,7 +198,7 @@ def entropy_routing(net, clients, input, prediction, labels, main_clss_dict, los
         l.backward()
         optim.step()
         optim.zero_grad()
-       #print(list(net.net[0].parameters()))
+        #print(list(net.net[0].parameters()))
         print('routing_accuracy: ', accuracy(o,y))
         print('routing_loss: ', l)
     return routed, mask
@@ -195,8 +222,10 @@ def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, entropy_trsh)
             x = x.to(DEVICE)  # Move input to device
             y = y.to(DEVICE)  # Move labels to device
             y_1hot = one_hot_encode(y.cpu(), len(CLSS)).to(DEVICE)  # Create one-hot on device
+            encoded = clients[int(key)].encode(x)
+            encoded = torch.flatten(encoded, start_dim=1)
             x = torch.flatten(x, start_dim=1)
-            o = local_client(x)
+            o = local_client(encoded)
 
             o_max = torch.softmax(o, dim=1)
 
@@ -204,12 +233,13 @@ def test_los(clients, routing_net, key, test_loader, DEVICE, CLSS, entropy_trsh)
             entropy_values = -torch.sum(o_max * log_o_max, dim=1)
             mask = entropy_values > entropy_trsh
 
-            extracted = x[mask]
+            encoded_extracted = encoded[mask]
+            extracted =x[mask]
             prediction = []
             if len(extracted) > 0:
                 routed = torch.argmax(routing_net(extracted), dim=1)
 
-                for i, (sample, cli) in enumerate(zip(extracted, routed)):
+                for i, (sample, cli) in enumerate(zip(encoded_extracted, routed)):
                     prediction.append(clients[int(cli)](sample))
                 prediction = torch.stack(prediction)
                 routed = None
@@ -272,7 +302,7 @@ def test(exp_dir, param, data):
     accs = []
     # Initialize networks and load state dicts
     for key in range(param['num_clients']):
-        clients[key] = (client_network(key, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
+        clients[key] = (client_network_cnn(key, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
         # Load state dict
         # Using map_location to ensure the loaded model is on the current device
         clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(key)}.pt'), map_location=data['device'], weights_only=False))
@@ -285,8 +315,9 @@ def test(exp_dir, param, data):
                 x = x.to(data['device'])  # Move input to device
                 y = y.to(data['device'])  # Move labels to device
                 y_1hot = one_hot_encode(y.cpu(), len(param['clss'])).to(data['device'])  # Create one-hot on device
-                x = torch.flatten(x, start_dim=1)
-                o = clients[int(key)](x)
+                encoded = clients[int(key)].encode(x)
+                encoded = torch.flatten(encoded, start_dim=1)
+                o = clients[int(key)](encoded)
 
                 # print(torch.argmax(o, dim=1), y_1hot)
                 # los = loss(o[:,:-1], y_1hot)
@@ -312,7 +343,7 @@ def test(exp_dir, param, data):
     accs = []
     # Re-initialize networks and load state dicts
     for i in range(param['num_clients']):
-        clients[i] = (client_network(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
+        clients[i] = (client_network_cnn(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=data['device']))
         routing_nets[i] = (routing_network(i, param['route_n_layers'], param['input_dim'], param['route_hidden_dim'], param['num_clients'],  DEVICE=data['device']))
 
     for key in range(param['num_clients']):
@@ -330,8 +361,10 @@ def test(exp_dir, param, data):
                 x = x.to(data['device'])  # Move input to device
                 y = y.to(data['device'])  # Move labels to device
                 y_1hot = one_hot_encode(y.cpu(), len(param['clss'])).to(data['device'])  # Create one-hot on device
+                encoded = clients[int(key)].encode(x)
+                encoded = torch.flatten(encoded, start_dim=1)
                 x = torch.flatten(x, start_dim=1)
-                o = clients[int(key)](x)
+                o = clients[int(key)](encoded)
 
                 o_max = torch.softmax(o, dim=1)
 
@@ -342,11 +375,12 @@ def test(exp_dir, param, data):
                         mask[i] += 1
                 mask = mask.bool()
                 extracted = x[mask]
+                encoded_extracted = encoded[mask]
                 prediction = []
                 if len(extracted) > 0:
                     routed = torch.argmax(routing_nets[key](extracted), dim=1)
 
-                    for i, (sample, cli) in enumerate(zip(extracted, routed)):
+                    for i, (sample, cli) in enumerate(zip(encoded_extracted, routed)):
                         prediction.append(clients[int(cli)](sample))
                     prediction = torch.stack(prediction)
                     routed = None
