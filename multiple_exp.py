@@ -101,7 +101,7 @@ if __name__ == '__main__':
     configurations = [
         {
             # Configuration 1: Baseline (Matches defaults closely)
-            "base_exp_name": "Baseline_Default_Config222",
+            "base_exp_name": "Baseline_Default_Config_cnn",
             "entropy_threshold": 0.3,
             "num_clients": 10,
             "num_main_clss": 3,
@@ -114,7 +114,7 @@ if __name__ == '__main__':
         {
             # Configuration 2: High Routing Sensitivity (Low Entropy Threshold)
             # Low threshold means more samples are considered "uncertain" and routed.
-            "base_exp_name": "High_Routing_Sensitivity_Entropy_0_221",
+            "base_exp_name": "High_Routing_Sensitivity_Entropy_cnn",
             "entropy_threshold": 0.1,  # Lowered from 0.3
             "num_clients": 10,
             "num_main_clss": 3,
@@ -127,7 +127,7 @@ if __name__ == '__main__':
         {
             # Configuration 3: High Client Specialization (Fewer Main Classes)
             # Clients are more specialized, should rely more on routing for unseen classes.
-            "base_exp_name": "High_Specialization_MainClss_222",
+            "base_exp_name": "High_Specialization_MainClss_2_cnn",
             "entropy_threshold": 0.3,
             "num_clients": 10,
             "num_main_clss": 2,  # Lowered from 3
@@ -140,7 +140,7 @@ if __name__ == '__main__':
         {
             # Configuration 4: Deep Client Network, Shallow Routing Network, Smaller Hidden Dim
             # Test if a more complex client network with fewer neurons and a simpler router is sufficient.
-            "base_exp_name": "Deep_Client_Shallow_Router_Small_Dim22",
+            "base_exp_name": "Deep_Client_Shallow_Router_Small_Dim_cnn",
             "entropy_threshold": 0.3,
             "num_clients": 10,
             "num_main_clss": 3,
@@ -153,7 +153,7 @@ if __name__ == '__main__':
         {
             # Configuration 5: Low Non-IID Data Distribution (Higher Main Class Percentage)
             # Training data is less diverse, potentially leading to higher entropy on test data.
-            "base_exp_name": "High_MainClss_Percent_0_9522",
+            "base_exp_name": "High_MainClss_Percent_0_95_cnn",
             "entropy_threshold": 0.3,
             "num_clients": 10,
             "num_main_clss": 3,

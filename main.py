@@ -62,18 +62,19 @@ import os
 #         print('==========================')
 
 
-def main(param, data, exp_dir):
+def main(param, data, exp_dir, run):
     #results = {}
     clients = {}
     routing_nets = {}
 
     DEVICE = data['device']
     CLSS = param['clss']
+    backbone = SharedBackbone()
 
     for i in range(param['num_clients']):
         # client_network and routing_network move themselves to DEVICE in their __init__
-        clients[i] = (client_network_cnn(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], DEVICE=DEVICE))
-        routing_nets[i] = (routing_network(i, param['route_n_layers'], param['input_dim'], param['route_hidden_dim'], param['num_clients'], DEVICE=DEVICE))
+        clients[i] = (client_network_cnn(i, param['n_layers'], param['input_dim'], param['hidden_dim'], param['output_dim'], backbone, DEVICE=DEVICE))
+        routing_nets[i] = (routing_network(i, param['route_n_layers'], param['input_dim'], param['route_hidden_dim'], param['num_clients'], backbone, DEVICE=DEVICE))
 
     loss = torch.nn.CrossEntropyLoss().to(DEVICE)  # Move loss function to device
     routing_loss = torch.nn.CrossEntropyLoss().to(DEVICE)  # Move loss function to device
@@ -93,7 +94,6 @@ def main(param, data, exp_dir):
     class_indices = defaultdict(list)
     for i, label in enumerate(data['ds_train'].targets):
         class_indices[int(label)].append(i)
-
     clss_data = {}
     for class_label, indices in class_indices.items():
         clss_data[class_label] = MyDataset(Subset(data['ds_train'], indices))
@@ -109,71 +109,89 @@ def main(param, data, exp_dir):
             main_clss_dict[cls].append(id)
         mixed_data[id] = (DataLoader(dat, batch_size=2048, shuffle=True), dat.main_clss)
     if param['client_train']:
+        for l in range(5):
+            for key, (loader, main_clss) in mixed_data.items():
+                optim = torch.optim.AdamW(clients[int(key)].parameters(), lr=0.0005)
+                #results[key] = {}
+                #results[key]['base'] = {}
+                for epoch in range(5):
+                    #results[key]['base'][epoch] = []
+                    print(key, epoch)
+                    for x, y in loader:
+                        x = x.to(DEVICE)  # Move input to device
+                        y = y.to(DEVICE)  # Move labels to device
+                        y_1hot = one_hot_encode(y, len(CLSS)).to(DEVICE)  # Create one-hot on device
+                        encoded = clients[int(key)].encode(x)
+                        #encoded = torch.flatten(encoded, start_dim=1)
+                        o = clients[int(key)](encoded)
+                        # print(torch.argmax(o, dim=1), y_1hot)
+                        los = loss(o, y_1hot)
+                        # if len(routed):
+                        #     los += loss(routed, y_1hot[mask])
+                        los.backward()
+                        optim.step()
+                        optim.zero_grad()
+                        #results[key]['base'][epoch].append(los)
+                        # print(los)
+                    run.log({f'client{key}/base_loss':los})
         for key, (loader, main_clss) in mixed_data.items():
-            optim = torch.optim.SGD(clients[int(key)].parameters(), lr=0.1)
-            #results[key] = {}
-            #results[key]['base'] = {}
-            for epoch in range(20):
-                #results[key]['base'][epoch] = []
-                print(key, epoch)
-                for x, y in loader:
-                    x = x.to(DEVICE)  # Move input to device
-                    y = y.to(DEVICE)  # Move labels to device
-                    y_1hot = one_hot_encode(y, len(CLSS)).to(DEVICE)  # Create one-hot on device
-
-                    encoded = clients[int(key)].encode(x)
-                    encoded = torch.flatten(encoded, start_dim=1)
-                    o = clients[int(key)](encoded)
-                    # print(torch.argmax(o, dim=1), y_1hot)
-                    los = loss(o, y_1hot)
-                    # if len(routed):
-                    #     los += loss(routed, y_1hot[mask])
-                    los.backward()
-                    optim.step()
-                    optim.zero_grad()
-                    #results[key]['base'][epoch].append(los)
-                    # print(los)
             torch.save(clients[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'client_base_{int(key)}.pt'))
     else:
         for key, (loader, main_clss) in mixed_data.items():
             # Load state dict and then move to device, or rely on client_network init
             clients[int(key)].load_state_dict(torch.load(os.path.join(exp_dir, 'models', f'client_base_{int(key)}.pt'), map_location=DEVICE, weights_only=True))
+    routing_optims = []
+    client_optims = []
 
+    freeze_weights(backbone)
     for key, (loader, main_clss) in mixed_data.items():
-        routing_optim = torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0005)
-        client_optim = torch.optim.AdamW(clients[int(key)].parameters(), lr=0.0005)
-        #results[key] = {}
-        #results[key]['route'] = {}
-        for epoch in range(35):
-            #results[key]['route'][epoch] = []
-            print(key, epoch)
-            for x, y in loader:
-                print('x', x.shape)
-                # for name, param in clients[int(key)].named_parameters():
-                #     print(name,param)
-                x = x.to(DEVICE)  # Move input to device
-                y = y.to(DEVICE)  # Move labels to device
-                y_1hot = one_hot_encode(y.cpu(), len(CLSS)).to(DEVICE)  # Create one-hot on device
-                encoded = clients[int(key)].encode(x)
-                encoded = torch.flatten(encoded, start_dim=1)
-                x = torch.flatten(x, start_dim=1)
-                o = clients[int(key)](encoded)
-                routed, mask = entropy_routing(routing_nets[int(key)], clients, x, encoded, o, y, main_clss_dict, routing_loss,
-                                               routing_optim, DEVICE=DEVICE, entropy_trsh=param['entropy_threshold'], num_clients=param['num_clients'])
-                # print(torch.argmax(o, dim=1), y_1hot)
-                if len(routed):
-                    o[mask] = routed
-                los = loss(o, y_1hot)
-                # if len(routed):
-                #     los += loss(routed, y_1hot[mask])
-                los.backward()
-                client_optim.step()
-                client_optim.zero_grad()
-                #results[key]['route'][epoch].append(los)
-            if epoch % 10 == 0:
-                test_los(clients, routing_nets[int(key)], key, data['test_loader'], DEVICE, param['clss'], param['entropy_threshold'])
-        torch.save(routing_nets[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'routing_{int(key)}.pt'))
-        torch.save(clients[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'client_{int(key)}.pt'))
+        routing_optims.append(torch.optim.AdamW(routing_nets[int(key)].parameters(), lr=0.0002))
+        client_optims.append(torch.optim.AdamW(clients[int(key)].parameters(), lr=0.0002))
+    for i in range(10):
+        for key, (loader, main_clss) in mixed_data.items():
+            routing_optim = routing_optims[key]
+            client_optim = client_optims[key]
+            #results[key] = {}
+            #results[key]['route'] = {}
+            for epoch in range(5):
+                #results[key]['route'][epoch] = []
+                print(key, epoch,i)
+                for x, y in loader:
+                    #print('x', x.shape)
+                    # for name, param in clients[int(key)].named_parameters():
+                    #     print(name,param)
+                    x = x.to(DEVICE)  # Move input to device
+                    y = y.to(DEVICE)  # Move labels to device
+                    y_1hot = one_hot_encode(y.cpu(), len(CLSS)).to(DEVICE)  # Create one-hot on device
+                    encoded = clients[int(key)].encode(x)
+                    #encoded = torch.flatten(encoded, start_dim=1)
+                    #x = torch.flatten(x, start_dim=1)
+                    o = clients[int(key)](encoded)
+                    routed = entropy_routing_train(routing_nets[int(key)], clients, x, encoded, o, y, main_clss_dict, routing_loss,
+                                                   routing_optim, DEVICE=DEVICE, entropy_trsh=param['entropy_threshold'], num_clients=param['num_clients'])
+                    # print(torch.argmax(o, dim=1), y_1hot)
+                    # if len(routed):
+                    #     o[mask] = routed
+                    los = loss(routed, y_1hot)
+
+                    run.log({f'client{key}/los': los})
+                    # if len(routed):
+                    #     los += loss(routed, y_1hot[mask])
+                    los.backward()
+                    #for k, _ in mixed_data.items():
+                    #    client_optims[k].step()
+                    #    client_optims[k].zero_grad()
+                    client_optim.step()
+                    client_optim.zero_grad()
+                    routing_optim.step()
+                    routing_optim.zero_grad()
+                    #results[key]['route'][epoch].append(los)
+                if epoch % 10 == 0:
+                    #print(list(backbone.parameters()))
+                    test_acc, test_conf = test_los(clients, routing_nets[int(key)], key, data['test_loader'], DEVICE, param['clss'], param['entropy_threshold'], run)
+                    run.log({f'client{key}/test_acc': test_acc})
+            torch.save(routing_nets[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'routing_{int(key)}.pt'))
+            torch.save(clients[int(key)].state_dict(), os.path.join(exp_dir, 'models', f'client_{int(key)}.pt'))
     return clients, routing_nets#, results
 # # winner = p.run(eval_genomes, 6)
 # #

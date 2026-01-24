@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, Subset, ConcatDataset, RandomSampler, Data
 import torch
 
 def get_params():
-    dataset = 'mnist'
+    dataset = 'cifar'
     if dataset == 'mnist':
         input_dim = 28 * 28
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
@@ -44,14 +44,14 @@ def get_params():
         #'ds_test' : ds_test,
         #'test_loader' : DataLoader(ds_test, batch_size=128, shuffle=True),
         'clss' : ds_train.classes,
-        'hidden_dim' : 256,
-        'route_hidden_dim' : 2048,
+        'hidden_dim' : 1024,
+        'route_hidden_dim' : 1024,
         'output_dim' : len(ds_train.classes),
-        'n_layers' : 2,
-        'route_n_layers' : 10,
+        'n_layers' : 3,
+        'route_n_layers' : 3,
         'num_clients' : 10,
         'num_main_clss' : 3,
-        'entropy_threshold' : 1.5,
+        'entropy_threshold' : 0.1,
         'main_clss_percent' : 0.8,
         'client_train' : True,
     }
